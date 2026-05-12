@@ -102,10 +102,27 @@ export async function runQuestionIntroSequence(
   })
 }
 
+/** Splash phase before any question (projector / guests see “starting soon”). */
+export async function showIntro() {
+  requireDb()
+  await set(ref(db, 'game'), {
+    questionIndex: 0,
+    phase: 'intro',
+    startedAt: null,
+    closesAt: null,
+    revealedCount: 0,
+  })
+}
+
 /** Starts the first question via the intro/reveal sequence (admin). */
 export async function startQuestion(shouldCancel) {
   requireDb()
   await runQuestionIntroSequence(0, shouldCancel)
+}
+
+/** Same as {@link startQuestion}; use from global `intro` phase (admin button). */
+export async function startFirstQuestionFromIntro(shouldCancel) {
+  return startQuestion(shouldCancel)
 }
 
 function scoreForUserId(scoresRoot, userId) {
@@ -223,7 +240,7 @@ export async function closeQuestion() {
   const snap = await get(ref(db, 'game'))
   if (!snap.exists()) return
   const g = snap.val()
-  if (g.phase === 'waiting') return
+  if (g.phase === 'waiting' || g.phase === 'intro') return
   const qIdx = g.questionIndex
   if (typeof qIdx !== 'number') return
   if (g.phase === 'question_open') {

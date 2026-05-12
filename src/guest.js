@@ -935,6 +935,25 @@ function guestPageHeadingHtml(displayName) {
 
 
 
+function drawIntroSoon(container, participantLike, myStatusHtml = '') {
+  const shown = formatParticipantDisplay(participantLike)
+
+  container.innerHTML = `
+
+    ${guestPageHeadingHtml(shown)}
+
+    <p class="guest-waiting-primary">${escapeHtml(t('guest.quizStartingSoon'))}</p>
+
+    ${myStatusHtml}
+
+    ${routeRoleLabelHtml()}
+
+  `
+
+}
+
+
+
 function drawWaiting(container, participantLike, myStatusHtml = '') {
 
   const shown = formatParticipantDisplay(participantLike)
@@ -1486,6 +1505,18 @@ function mountParticipantWaiting(container, userId, cfg) {
     if (phase === 'waiting') {
 
       drawWaiting(container, participantLike, myStatusHtml)
+
+      syncCountdownTimer()
+
+      return
+
+    }
+
+
+
+    if (phase === 'intro') {
+
+      drawIntroSoon(container, participantLike, myStatusHtml)
 
       syncCountdownTimer()
 

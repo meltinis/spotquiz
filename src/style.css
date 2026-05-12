@@ -1203,6 +1203,25 @@ p {
   padding-top: clamp(0.25rem, 1.5vh, 1rem);
 }
 
+.screen-show--splash {
+  min-height: min(92vh, 60rem);
+  padding: clamp(1rem, 3vw, 2rem);
+  justify-content: center;
+  background: radial-gradient(ellipse 100% 100% at 50% 50%, #1e2838 0%, #0a0e14 78%);
+}
+
+.screen-intro-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(92vw, 72rem);
+  max-height: min(86vh, 54rem);
+  margin: 0 auto;
+  object-fit: contain;
+  border-radius: 12px;
+  box-shadow: 0 0.5rem 3rem rgba(0, 0, 0, 0.55);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .screen-show {
     animation: none;

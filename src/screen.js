@@ -255,7 +255,7 @@ function formatScreenCountdown(remainingMs) {
 
 function questionProgressHtml(phase, idx) {
   const qWord = escapeHtml(t('common.questionNoun'))
-  if (phase === 'waiting') {
+  if (phase === 'waiting' || phase === 'intro') {
     return `${qWord} <strong>—</strong> / <strong>${QUESTION_COUNT}</strong>`
   }
   if (typeof idx !== 'number' || idx < 0 || idx >= QUESTIONS.length) {
@@ -373,6 +373,15 @@ export function renderScreen(container) {
         : undefined
 
     const transitionKey = `${phase}:${typeof idx === 'number' ? idx : 'x'}`
+
+    if (phase === 'intro') {
+      const html = `
+      <div class="screen-show screen-show--splash" data-screen-phase="intro">
+        <img class="screen-intro-img" src="/intro.jpg" alt="" />
+      </div>`
+      paintScreen(container, html, transitionKey, lastTransitionKey)
+      return
+    }
 
     if (
       (phase === 'question_intro' || phase === 'question_reveal_answers') &&

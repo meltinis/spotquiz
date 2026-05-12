@@ -2,6 +2,8 @@ import { db } from './firebase.js'
 import { t } from './i18n.js'
 import {
   startQuestion,
+  startFirstQuestionFromIntro,
+  showIntro,
   closeQuestion,
   nextQuestion,
   resetGame,
@@ -116,6 +118,12 @@ export function renderAdmin(container) {
     <p>${escapeHtml(t('admin.lede'))}</p>
     <p class="admin-game-actions">
       <span class="admin-game-actions-main">
+        <button type="button" class="admin-btn admin-btn-secondary" id="admin-show-intro">
+          ${escapeHtml(t('admin.showIntro'))}
+        </button>
+        <button type="button" class="admin-btn" id="admin-start-from-intro">
+          ${escapeHtml(t('admin.startFirstQuestionFromIntro'))}
+        </button>
         <button type="button" class="admin-btn" id="admin-start-question">
           ${escapeHtml(t('admin.startQuestionIntro'))}
         </button>
@@ -168,6 +176,8 @@ export function renderAdmin(container) {
   const gameStatusMount = container.querySelector('#admin-game-status')
   const confirmandMount = container.querySelector('#admin-confirmand-panel')
   const listMount = container.querySelector('#admin-participants')
+  const showIntroBtn = container.querySelector('#admin-show-intro')
+  const startFromIntroBtn = container.querySelector('#admin-start-from-intro')
   const startQuestionBtn = container.querySelector('#admin-start-question')
   const closeQuestionBtn = container.querySelector('#admin-close-question')
   const nextQuestionBtn = container.querySelector('#admin-next-question')
@@ -261,7 +271,7 @@ export function renderAdmin(container) {
   }
 
   function questionProgressInnerHtml(phase, idx) {
-    if (phase === 'waiting') {
+    if (phase === 'waiting' || phase === 'intro') {
       return `<strong>—</strong> / <strong>${QUESTION_COUNT}</strong>`
     }
     if (typeof idx !== 'number' || idx < 0 || idx >= QUESTIONS.length) {
@@ -283,7 +293,7 @@ export function renderAdmin(container) {
     const idx = gameState.questionIndex
     const phase = gameState.phase ?? '—'
     const q =
-      phase === 'waiting'
+      phase === 'waiting' || phase === 'intro'
         ? undefined
         : typeof idx === 'number' && idx >= 0 && idx < QUESTIONS.length
           ? QUESTIONS[idx]
@@ -387,6 +397,37 @@ export function renderAdmin(container) {
         ${warning}
       </div>`
   }
+
+  showIntroBtn?.addEventListener('click', async () => {
+    bannerText = ''
+    adminIntroSequenceCancelled = true
+    try {
+      await showIntro()
+    } catch (err) {
+      console.error(err)
+      bannerText =
+        typeof err.message === 'string'
+          ? err.message
+          : t('admin.couldNotShowIntro')
+    }
+    draw()
+  })
+
+  startFromIntroBtn?.addEventListener('click', async () => {
+    bannerText = ''
+    adminIntroSequenceCancelled = false
+    draw()
+    try {
+      await startFirstQuestionFromIntro(() => adminIntroSequenceCancelled)
+    } catch (err) {
+      console.error(err)
+      bannerText =
+        typeof err.message === 'string'
+          ? err.message
+          : t('admin.couldNotStart')
+    }
+    draw()
+  })
 
   startQuestionBtn?.addEventListener('click', async () => {
     bannerText = ''
@@ -507,11 +548,21 @@ export function renderAdmin(container) {
     const disableNext =
       !gameState ||
       phase === 'waiting' ||
+      phase === 'intro' ||
       phase === 'question_open' ||
       inIntroOrReveal ||
       onLastQuestion
     if (nextQuestionBtn) nextQuestionBtn.disabled = disableNext
+    const disableShowIntro =
+      gameState &&
+      (phase === 'question_intro' ||
+        phase === 'question_reveal_answers' ||
+        phase === 'question_open')
+    if (showIntroBtn) showIntroBtn.disabled = !!disableShowIntro
+    const disableStartFromIntro = !gameState || phase !== 'intro'
+    if (startFromIntroBtn) startFromIntroBtn.disabled = disableStartFromIntro
     const disableStart =
+      phase === 'intro' ||
       phase === 'question_intro' ||
       phase === 'question_reveal_answers' ||
       phase === 'question_open' ||
