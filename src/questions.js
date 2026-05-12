@@ -10,7 +10,7 @@ export const QUESTIONS = [
     text: 'Hvad fylder i Sebastians liv udover håndbold & Victoria?',
     options: [
       'at lave sine lektier før alle andre',
-      'at lære drikkele ge af sin søster',
+      'at lære drikkelege af sin søster',
       'at spille computer med sine venner',
       'sin far',
     ],
@@ -46,8 +46,8 @@ export const QUESTIONS = [
     options: [
       'at lave mad',
       'at rydde op',
-      'at huske sange',
-      'at danse som en Michael J',
+      'at synge sange',
+      'at snyde sin søster',
     ],
   },
   {
@@ -57,13 +57,13 @@ export const QUESTIONS = [
   },
   {
     id: 'q_housework_done',
-    text: 'Hvilken én af disse gerninger i huset har Sebastian faktisk udført?',
+    text: 'Hvilken én af disse gerninger i huset har Sebastian rent faktisk udført?',
     options: ['tømme opvasker', 'støvsuge', 'vaske vinduer', 'vaske tøj'],
   },
   {
     id: 'q_fight',
     text: 'Hvilken familiemedlem er Sebastian oftest oppe og slås med?',
-    options: ['sin far', 'sin mor', 'sin søster', 'MANGLER'],
+    options: ['sin far', 'sin mor', 'sin søster', 'sig selv'],
   },
   {
     id: 'q_japan',
@@ -78,21 +78,21 @@ export const QUESTIONS = [
   {
     id: 'q_future_job',
     text: 'Hvad arbejder Sebastian med om 10 år?',
-    options: ['Ingeniører', 'Håndbold & fans', 'MANGLER', 'MANGLER'],
+    options: ['Ingeniørfaget', 'Er sportsdirektør', 'Sin PhD', 'I et Pit Crew'],
   },
   {
     id: 'q_future_home',
     text: 'Hvor bor Sebastian om 10 år?',
-    options: ['hjemme hos mor & far', 'hjemme hos sin søster', 'i udlandet', 'MANGLER'],
+    options: ['hjemme hos mor & far', 'hjemme hos sin søster', 'i udlandet', 'hos Bica & Tataie'],
   },
   {
     id: 'q_future_dream',
     text: 'Hvad er Sebastians største drøm/ønske for fremtiden?',
     options: [
-      'At spille håndbold i Aalborg',
+      'At spille håndbold med Gidsel',
       'At få en Porche 911',
       'At få 4 børn',
-      'MANGLER',
+      'At denne quiz holder op',
     ],
   },
 ]
