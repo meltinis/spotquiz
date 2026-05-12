@@ -26,6 +26,7 @@ let participantUnsubscribe = null
 let gameUnsubscribe = null
 let answersUnsubscribe = null
 let adminTimerTickId = null
+let adminIntroSequenceCancelled = false
 
 function clearAdminTimerTick() {
   if (adminTimerTickId != null) {
@@ -37,6 +38,7 @@ function clearAdminTimerTick() {
 /** Call when leaving /admin so the realtime listener stops. */
 export function disposeAdminSubscriptions() {
   clearAdminTimerTick()
+  adminIntroSequenceCancelled = true
   if (participantUnsubscribe) {
     participantUnsubscribe()
     participantUnsubscribe = null
@@ -115,13 +117,13 @@ export function renderAdmin(container) {
     <p class="admin-game-actions">
       <span class="admin-game-actions-main">
         <button type="button" class="admin-btn" id="admin-start-question">
-          ${escapeHtml(t('admin.startQuestion'))}
+          ${escapeHtml(t('admin.startQuestionIntro'))}
         </button>
         <button type="button" class="admin-btn" id="admin-close-question">
           ${escapeHtml(t('admin.closeQuestion'))}
         </button>
         <button type="button" class="admin-btn" id="admin-next-question">
-          ${escapeHtml(t('admin.nextQuestion'))}
+          ${escapeHtml(t('admin.nextQuestionIntro'))}
         </button>
       </span>
       <span class="admin-game-actions-aside">
@@ -221,6 +223,7 @@ export function renderAdmin(container) {
       resetDialogError.hidden = false
       return
     }
+    adminIntroSequenceCancelled = true
     try {
       await resetGame()
       bannerText = ''
@@ -341,7 +344,10 @@ export function renderAdmin(container) {
     const phase = gameState?.phase
     const idx = gameState?.questionIndex
     const onQuestion =
-      (phase === 'question_open' || phase === 'question_closed') &&
+      (phase === 'question_intro' ||
+        phase === 'question_reveal_answers' ||
+        phase === 'question_open' ||
+        phase === 'question_closed') &&
       typeof idx === 'number'
 
     let registration = ''
@@ -384,8 +390,10 @@ export function renderAdmin(container) {
 
   startQuestionBtn?.addEventListener('click', async () => {
     bannerText = ''
+    adminIntroSequenceCancelled = false
+    draw()
     try {
-      await startQuestion()
+      await startQuestion(() => adminIntroSequenceCancelled)
     } catch (err) {
       console.error(err)
       bannerText =
@@ -398,6 +406,7 @@ export function renderAdmin(container) {
 
   closeQuestionBtn?.addEventListener('click', async () => {
     bannerText = ''
+    adminIntroSequenceCancelled = true
     try {
       await closeQuestion()
     } catch (err) {
@@ -412,8 +421,10 @@ export function renderAdmin(container) {
 
   nextQuestionBtn?.addEventListener('click', async () => {
     bannerText = ''
+    adminIntroSequenceCancelled = false
+    draw()
     try {
-      await nextQuestion()
+      await nextQuestion(() => adminIntroSequenceCancelled)
     } catch (err) {
       console.error(err)
       bannerText =
@@ -491,9 +502,23 @@ export function renderAdmin(container) {
     const phase = gameState?.phase
     const onLastQuestion =
       typeof idx === 'number' && idx >= QUESTION_COUNT - 1
+    const inIntroOrReveal =
+      phase === 'question_intro' || phase === 'question_reveal_answers'
     const disableNext =
-      !gameState || phase === 'waiting' || onLastQuestion
+      !gameState ||
+      phase === 'waiting' ||
+      phase === 'question_open' ||
+      inIntroOrReveal ||
+      onLastQuestion
     if (nextQuestionBtn) nextQuestionBtn.disabled = disableNext
+    const disableStart =
+      phase === 'question_intro' ||
+      phase === 'question_reveal_answers' ||
+      phase === 'question_open' ||
+      phase === 'question_closed'
+    if (startQuestionBtn) startQuestionBtn.disabled = disableStart
+    const disableClose = phase !== 'question_open' && phase !== 'question_closed'
+    if (closeQuestionBtn) closeQuestionBtn.disabled = disableClose
 
     const input = listMount.querySelector('.admin-name-input')
     if (input) {

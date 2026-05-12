@@ -146,6 +146,59 @@ function questionProgressHtml(phase, idx) {
   return `${qWord} <strong>${idx + 1}</strong> / <strong>${QUESTION_COUNT}</strong>`
 }
 
+/** Shape icon class per option index (0–3). */
+const SCREEN_OPTION_SHAPE_CLASSES = [
+  'guest-option-shape-triangle',
+  'guest-option-shape-diamond',
+  'guest-option-shape-circle',
+  'guest-option-shape-square',
+]
+
+/**
+ * Renders the 4 answer cards on the screen page. Options past `revealedCount` are
+ * rendered hidden so layout doesn't jump when the rest pop in. The pop-in animation
+ * is only applied when `animateReveal` is true (reveal phase) to avoid replaying it
+ * on every redraw of the countdown.
+ */
+function screenOptionsHtml(question, revealedCount, animateReveal) {
+  const total = question.options.length
+  const visibleCount = Math.max(
+    0,
+    Math.min(total, Math.floor(revealedCount ?? 0)),
+  )
+  const cards = question.options
+    .map((label, i) => {
+      const shapeClass =
+        SCREEN_OPTION_SHAPE_CLASSES[i] ?? SCREEN_OPTION_SHAPE_CLASSES[0]
+      const visible = i < visibleCount
+      const hiddenClass = visible ? '' : ' screen-option-card-hidden'
+      const revealedClass =
+        visible && animateReveal ? ' screen-option-card-revealed' : ''
+      return `
+        <div
+          class="screen-option-card option-${i}${hiddenClass}${revealedClass}"
+          aria-hidden="${visible ? 'false' : 'true'}"
+        >
+          <span class="guest-option-shape ${shapeClass}" aria-hidden="true"></span>
+          <span class="screen-option-label">${escapeHtml(label)}</span>
+        </div>`
+    })
+    .join('')
+  return `<div class="screen-options-grid">${cards}</div>`
+}
+
+function remainingMsFromClosesAt(closesAt) {
+  if (typeof closesAt !== 'number') return 0
+  return Math.max(0, closesAt - Date.now())
+}
+
+function formatScreenCountdown(remainingMs) {
+  const s = Math.max(0, Math.ceil(remainingMs / 1000))
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  return `${m}:${String(sec).padStart(2, '0')}`
+}
+
 export function renderScreen(container) {
   disposeScreenSubscriptions()
 
@@ -230,14 +283,33 @@ export function renderScreen(container) {
         ? QUESTIONS[idx]
         : undefined
 
-    if (phase === 'question_open' && q) {
-      const answered =
-        typeof idx === 'number' ? Object.keys(answersForQuestion).length : 0
-      const questionBlock = `<p class="screen-question">${escapeHtml(q.text)}</p>`
+    if (
+      (phase === 'question_intro' || phase === 'question_reveal_answers') &&
+      q
+    ) {
+      const revealedCount =
+        phase === 'question_intro' ? 0 : (gameState.revealedCount ?? 0)
       container.innerHTML = `
       <div class="screen-layout">
         <p class="screen-progress">${questionProgressHtml(phase, idx)}</p>
-        ${questionBlock}
+        <p class="screen-question">${escapeHtml(q.text)}</p>
+        ${screenOptionsHtml(q, revealedCount, true)}
+      </div>`
+      return
+    }
+
+    if (phase === 'question_open' && q) {
+      const answered =
+        typeof idx === 'number' ? Object.keys(answersForQuestion).length : 0
+      const remainingMs = remainingMsFromClosesAt(gameState.closesAt)
+      const countdownLine = `<p class="screen-countdown">${escapeHtml(t('guest.timeLeftPrefix'))} ${escapeHtml(formatScreenCountdown(remainingMs))}</p>`
+      const totalOptions = q.options.length
+      container.innerHTML = `
+      <div class="screen-layout">
+        <p class="screen-progress">${questionProgressHtml(phase, idx)}</p>
+        <p class="screen-question">${escapeHtml(q.text)}</p>
+        ${screenOptionsHtml(q, totalOptions, false)}
+        ${countdownLine}
         <p class="screen-count">${answered} ${escapeHtml(t('screen.answered'))}</p>
       </div>`
       return
@@ -313,6 +385,9 @@ export function renderScreen(container) {
       Date.now() >= gameState.closesAt
     ) {
       maybeAutoCloseExpiredQuestion().catch(console.error)
+    }
+    if (gameState?.phase === 'question_open') {
+      draw()
     }
   }, 1000)
 }

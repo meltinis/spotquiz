@@ -7,7 +7,16 @@ import { PARTICIPANT_ROLE_CONFIRMAND } from './routeRole.js'
 const MAX_QUESTION_INDEX = QUESTIONS.length - 1
 
 /** Time window for answering once a question is opened (ms). */
-const QUESTION_OPEN_DURATION_MS = 10_000
+const QUESTION_OPEN_DURATION_MS = 30_000 
+
+/** How long the question text is shown alone before answers start revealing (ms). */
+const QUESTION_INTRO_DURATION_MS = 5000
+
+/** Time between revealing each answer option (ms). */
+export const REVEAL_ANSWER_INTERVAL_MS = 2000
+
+/** Pause after the last answer is revealed before the timer starts (ms). */
+const REVEAL_TO_OPEN_PAUSE_MS = 2000
 
 const BASE_CORRECT_POINTS = 1000
 const MAX_SPEED_BONUS_POINTS = 500
@@ -16,6 +25,10 @@ function requireDb() {
   if (!db) {
     throw new Error(t('errors.firebaseUrlMissing'))
   }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /** Listen to `game/`; callback receives `null` if missing. */
@@ -30,16 +43,69 @@ export function subscribeGame(onData) {
   })
 }
 
-/** Starts the first question window (admin). */
-export async function startQuestion() {
+/**
+ * Runs the intro → progressive reveal → open sequence for `questionIndex` (admin-driven).
+ *
+ * Writes the Firebase `game` state for each step so guests and the screen mirror it.
+ * Uses `setTimeout`-based pacing in the admin's tab — keep the tab open until the
+ * timer starts. If `shouldCancel()` returns true between steps, the sequence aborts
+ * without writing further updates (the current Firebase state is left as-is).
+ */
+export async function runQuestionIntroSequence(
+  questionIndex,
+  shouldCancel = () => false,
+) {
   requireDb()
-  const now = Date.now()
+  if (
+    typeof questionIndex !== 'number' ||
+    questionIndex < 0 ||
+    questionIndex > MAX_QUESTION_INDEX
+  ) {
+    return
+  }
+  const q = QUESTIONS[questionIndex]
+  if (!q) return
+  const optionsLen = q.options.length
+
+  if (shouldCancel()) return
   await set(ref(db, 'game'), {
-    questionIndex: 0,
+    questionIndex,
+    phase: 'question_intro',
+    startedAt: null,
+    closesAt: null,
+    revealedCount: 0,
+  })
+
+  await sleep(QUESTION_INTRO_DURATION_MS)
+  if (shouldCancel()) return
+
+  for (let i = 1; i <= optionsLen; i++) {
+    if (shouldCancel()) return
+    await update(ref(db, 'game'), {
+      phase: 'question_reveal_answers',
+      revealedCount: i,
+    })
+    if (i < optionsLen) {
+      await sleep(REVEAL_ANSWER_INTERVAL_MS)
+    }
+  }
+
+  await sleep(REVEAL_TO_OPEN_PAUSE_MS)
+  if (shouldCancel()) return
+
+  const now = Date.now()
+  await update(ref(db, 'game'), {
     phase: 'question_open',
     startedAt: now,
     closesAt: now + QUESTION_OPEN_DURATION_MS,
+    revealedCount: optionsLen,
   })
+}
+
+/** Starts the first question via the intro/reveal sequence (admin). */
+export async function startQuestion(shouldCancel) {
+  requireDb()
+  await runQuestionIntroSequence(0, shouldCancel)
 }
 
 function scoreForUserId(scoresRoot, userId) {
@@ -178,8 +244,8 @@ export async function maybeAutoCloseExpiredQuestion() {
   await closeQuestion()
 }
 
-/** Advances to the next question and opens the window (admin). */
-export async function nextQuestion() {
+/** Advances to the next question via the intro/reveal sequence (admin). */
+export async function nextQuestion(shouldCancel) {
   requireDb()
   const snap = await get(ref(db, 'game'))
   if (!snap.exists()) {
@@ -191,13 +257,7 @@ export async function nextQuestion() {
   if (idx >= MAX_QUESTION_INDEX) {
     throw new Error(t('errors.alreadyLastQuestion'))
   }
-  const now = Date.now()
-  await update(ref(db, 'game'), {
-    questionIndex: idx + 1,
-    phase: 'question_open',
-    startedAt: now,
-    closesAt: now + QUESTION_OPEN_DURATION_MS,
-  })
+  await runQuestionIntroSequence(idx + 1, shouldCancel)
 }
 
 /** Clears answers, results & scores and returns the game to an idle state (participants unchanged). */
@@ -209,6 +269,7 @@ export async function resetGame() {
       phase: 'waiting',
       startedAt: null,
       closesAt: null,
+      revealedCount: 0,
     }),
     set(ref(db, 'answers'), null),
     set(ref(db, 'results'), null),

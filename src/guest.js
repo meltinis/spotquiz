@@ -936,6 +936,58 @@ function drawQuestionClosed(container, participantLike, question, myStatusHtml =
 
 }
 
+/**
+ * Renders the question text plus the first `revealedCount` options as disabled cards.
+ * `revealedCount = 0` ⇒ no options yet (pure intro). Used for `question_intro` and
+ * `question_reveal_answers` phases. No timer, no answering.
+ */
+function drawQuestionIntroOrReveal(
+  container,
+  participantLike,
+  question,
+  { revealedCount, myStatusHtml = '' },
+) {
+  const shown = formatParticipantDisplay(participantLike)
+
+  const totalOptions = question.options.length
+  const visibleCount = Math.max(
+    0,
+    Math.min(totalOptions, Math.floor(revealedCount ?? 0)),
+  )
+
+  const cards = question.options
+    .map((label, i) => {
+      const shapeClass =
+        GUEST_OPTION_SHAPE_CLASSES[i] ?? GUEST_OPTION_SHAPE_CLASSES[0]
+      const visible = i < visibleCount
+      const hiddenClass = visible ? '' : ' guest-option-card-hidden'
+      const revealedClass = visible ? ' guest-option-card-revealed' : ''
+      return `
+      <button
+        type="button"
+        class="guest-option-card option-${i}${hiddenClass}${revealedClass}"
+        data-option-index="${i}"
+        disabled
+        aria-hidden="${visible ? 'false' : 'true'}"
+        aria-label="${escapeHtml(`${t('guest.answerAriaPrefix')} ${i + 1}: ${label}`)}"
+      >
+        <span class="guest-option-shape ${shapeClass}" aria-hidden="true"></span>
+        <span class="guest-option-label">${escapeHtml(label)}</span>
+      </button>
+    `
+    })
+    .join('')
+
+  container.innerHTML = `
+    ${guestPageHeadingHtml(shown)}
+    <p class="guest-question-text">${escapeHtml(question.text)}</p>
+    <p class="guest-reveal-hint">${escapeHtml(t('guest.getReady'))}</p>
+    <div class="guest-options guest-options-grid">${cards}</div>
+    ${myStatusHtml}
+    ${routeRoleLabelHtml()}
+  `
+}
+
 
 
 function drawQuestionOpen(
@@ -1390,6 +1442,44 @@ function mountParticipantWaiting(container, userId, cfg) {
       syncCountdownTimer()
 
       return
+
+    }
+
+
+
+    if (
+
+      typeof idx === 'number' &&
+
+      idx >= 0 &&
+
+      idx < QUESTIONS.length &&
+
+      (phase === 'question_intro' || phase === 'question_reveal_answers')
+
+    ) {
+
+      const introQ = QUESTIONS[idx]
+
+      if (introQ) {
+
+        const revealedCount =
+
+          phase === 'question_intro' ? 0 : (lastGame?.revealedCount ?? 0)
+
+        drawQuestionIntroOrReveal(container, participantLike, introQ, {
+
+          revealedCount,
+
+          myStatusHtml,
+
+        })
+
+        syncCountdownTimer()
+
+        return
+
+      }
 
     }
 
