@@ -1,0 +1,17 @@
+---
+alwaysApply: true
+---
+
+This project is a small Firebase realtime quiz app for a confirmation party.
+
+General rules:
+- Keep implementations simple and readable
+- Prefer vanilla JavaScript over abstractions
+- Do not introduce React or frameworks
+- Avoid overengineering
+- Minimize file count and architectural complexity
+- Prefer direct and explicit code over generic patterns
+- Avoid unnecessary helper layers
+- Use Firebase Realtime Database directly
+- Keep UI logic straightforward
+- Prioritize robustness and simplicity over scalability

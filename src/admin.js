@@ -1,5 +1,7 @@
 import { db } from './firebase.js'
-import { startQuestion } from './game.js'
+import { startQuestion, subscribeGame } from './game.js'
+import { subscribeAnswersForQuestion } from './answers.js'
+import { QUESTIONS } from './questions.js'
 import {
   rawParticipantDisplay,
   formatParticipantDisplay,
@@ -9,12 +11,22 @@ import {
 } from './adminParticipants.js'
 
 let participantUnsubscribe = null
+let gameUnsubscribe = null
+let answersUnsubscribe = null
 
 /** Call when leaving /admin so the realtime listener stops. */
 export function disposeAdminSubscriptions() {
   if (participantUnsubscribe) {
     participantUnsubscribe()
     participantUnsubscribe = null
+  }
+  if (gameUnsubscribe) {
+    gameUnsubscribe()
+    gameUnsubscribe = null
+  }
+  if (answersUnsubscribe) {
+    answersUnsubscribe()
+    answersUnsubscribe = null
   }
 }
 
@@ -35,6 +47,8 @@ export function renderAdmin(container) {
   disposeAdminSubscriptions()
 
   let participantsMap = {}
+  let gameState = null
+  let answersForQuestion = {}
   let editingUserId = null
   let bannerText = ''
 
@@ -47,12 +61,91 @@ export function renderAdmin(container) {
       </button>
     </p>
     <p class="admin-banner" id="admin-banner" hidden></p>
+    <div id="admin-game-status" class="admin-game-status"></div>
     <div id="admin-participants"></div>
   `
 
   const bannerEl = container.querySelector('#admin-banner')
+  const gameStatusMount = container.querySelector('#admin-game-status')
   const listMount = container.querySelector('#admin-participants')
   const startQuestionBtn = container.querySelector('#admin-start-question')
+
+  function resubscribeAnswersForCurrentQuestion() {
+    if (answersUnsubscribe) {
+      answersUnsubscribe()
+      answersUnsubscribe = null
+    }
+    answersForQuestion = {}
+    const phase = gameState?.phase
+    const qIdx = gameState?.questionIndex
+    if (!db || typeof qIdx !== 'number' || phase !== 'question_open') {
+      return
+    }
+    answersUnsubscribe = subscribeAnswersForQuestion(qIdx, (map) => {
+      answersForQuestion = map ?? {}
+      draw()
+    })
+  }
+
+  function gameStatusHtml() {
+    if (!gameState) {
+      return `
+        <div class="admin-game-panel">
+          <h2 class="admin-game-heading">Game status</h2>
+          <p class="admin-game-muted">No active game yet. Use <strong>Start Question</strong> when ready.</p>
+        </div>`
+    }
+
+    const idx = gameState.questionIndex
+    const phase = gameState.phase ?? '—'
+    const q = typeof idx === 'number' ? QUESTIONS[idx] : undefined
+    const questionText =
+      q?.text != null ? escapeHtml(q.text) : `<span class="admin-game-muted">—</span>`
+    const startedAt =
+      typeof gameState.startedAt === 'number'
+        ? escapeHtml(new Date(gameState.startedAt).toLocaleString())
+        : '—'
+    const closesAt =
+      typeof gameState.closesAt === 'number'
+        ? escapeHtml(new Date(gameState.closesAt).toLocaleString())
+        : '—'
+    const participantsCount = Object.keys(participantsMap).length
+    const answeredCount =
+      phase === 'question_open' && typeof idx === 'number'
+        ? Object.keys(answersForQuestion).length
+        : 0
+
+    return `
+      <div class="admin-game-panel">
+        <h2 class="admin-game-heading">Game status</h2>
+        <dl class="admin-game-dl">
+          <div class="admin-game-dl-row">
+            <dt>Phase</dt>
+            <dd>${escapeHtml(String(phase))}</dd>
+          </div>
+          <div class="admin-game-dl-row">
+            <dt>Question index</dt>
+            <dd>${typeof idx === 'number' ? escapeHtml(String(idx)) : '—'}</dd>
+          </div>
+          <div class="admin-game-dl-row">
+            <dt>Question</dt>
+            <dd>${questionText}</dd>
+          </div>
+          <div class="admin-game-dl-row">
+            <dt>Started</dt>
+            <dd>${startedAt}</dd>
+          </div>
+          <div class="admin-game-dl-row">
+            <dt>Closes</dt>
+            <dd>${closesAt}</dd>
+          </div>
+        </dl>
+        <p class="admin-game-progress">
+          <strong>${answeredCount}</strong> / <strong>${participantsCount}</strong>
+          answered
+        </p>
+      </div>`
+  }
 
   startQuestionBtn?.addEventListener('click', async () => {
     bannerText = ''
@@ -107,10 +200,12 @@ export function renderAdmin(container) {
     bannerEl.textContent = bannerText
 
     if (!db) {
+      if (gameStatusMount) gameStatusMount.innerHTML = ''
       listMount.innerHTML =
         '<p class="admin-empty">Connect Firebase (<code>VITE_FIREBASE_DATABASE_URL</code>) to manage participants.</p>'
       return
     }
+    if (gameStatusMount) gameStatusMount.innerHTML = gameStatusHtml()
     listMount.innerHTML = participantRowsHtml()
 
     const input = listMount.querySelector('.admin-name-input')
@@ -165,6 +260,12 @@ export function renderAdmin(container) {
     draw()
     return
   }
+
+  gameUnsubscribe = subscribeGame((next) => {
+    gameState = next
+    resubscribeAnswersForCurrentQuestion()
+    draw()
+  })
 
   participantUnsubscribe = subscribeParticipants((map) => {
     participantsMap = map ?? {}

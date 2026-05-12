@@ -32,11 +32,21 @@ import { subscribeGame } from './game.js'
 
 import { QUESTIONS } from './questions.js'
 
+import {
+
+  subscribeUserAnswer,
+
+  saveNewAnswer,
+
+} from './answers.js'
+
 
 
 let guestRealtimeUnsubscribe = null
 
 let guestGameUnsubscribe = null
+
+let guestAnswerUnsubscribe = null
 
 
 
@@ -57,6 +67,44 @@ export function disposeGuestSubscriptions() {
     guestGameUnsubscribe = null
 
   }
+
+  if (guestAnswerUnsubscribe) {
+
+    guestAnswerUnsubscribe()
+
+    guestAnswerUnsubscribe = null
+
+  }
+
+  clearGuestOptionDelegation()
+
+}
+
+
+
+let guestOptionDelegationTarget = null
+
+let guestOptionDelegationHandler = null
+
+
+
+function clearGuestOptionDelegation() {
+
+  if (guestOptionDelegationTarget && guestOptionDelegationHandler) {
+
+    guestOptionDelegationTarget.removeEventListener(
+
+      'click',
+
+      guestOptionDelegationHandler,
+
+    )
+
+  }
+
+  guestOptionDelegationTarget = null
+
+  guestOptionDelegationHandler = null
 
 }
 
@@ -214,9 +262,21 @@ function drawWaiting(container, participantLike) {
 
 
 
-function drawQuestionOpen(container, participantLike, question) {
+function drawQuestionOpen(
+
+  container,
+
+  participantLike,
+
+  question,
+
+  { existingAnswer, submitting },
+
+) {
 
   const shown = formatParticipantDisplay(participantLike)
+
+  const locked = !!existingAnswer || submitting
 
   const buttons = question.options
 
@@ -224,7 +284,17 @@ function drawQuestionOpen(container, participantLike, question) {
 
       (label, i) => `
 
-      <button type="button" class="guest-option-btn" data-option-index="${i}">
+      <button
+
+        type="button"
+
+        class="guest-option-btn"
+
+        data-option-index="${i}"
+
+        ${locked ? 'disabled' : ''}
+
+      >
 
         ${escapeHtml(label)}
 
@@ -236,11 +306,21 @@ function drawQuestionOpen(container, participantLike, question) {
 
     .join('')
 
+  const registeredBlock =
+
+    existingAnswer
+
+      ? '<p class="guest-answer-registered">Your answer has been registered</p>'
+
+      : ''
+
   container.innerHTML = `
 
     <h1>You're in</h1>
 
     <p class="guest-question-text">${escapeHtml(question.text)}</p>
+
+    ${registeredBlock}
 
     <div class="guest-options">${buttons}</div>
 
@@ -270,11 +350,67 @@ function mountGuestWaiting(container, userId) {
 
 
 
+  clearGuestOptionDelegation()
+
+
+
   const sess = getGuestSession()
 
   let lastParticipant = sess ? { displayName: sess.displayName } : null
 
   let lastGame = null
+
+  let lastMyAnswer = null
+
+  let answerSubmitting = false
+
+
+
+  function resubscribeMyAnswer() {
+
+    if (guestAnswerUnsubscribe) {
+
+      guestAnswerUnsubscribe()
+
+      guestAnswerUnsubscribe = null
+
+    }
+
+    lastMyAnswer = null
+
+    answerSubmitting = false
+
+
+
+    const phase = lastGame?.phase
+
+    const idx = lastGame?.questionIndex
+
+    if (typeof idx !== 'number' || phase !== 'question_open') {
+
+      applyGuestView()
+
+      return
+
+    }
+
+
+
+    guestAnswerUnsubscribe = subscribeUserAnswer(idx, userId, (data) => {
+
+      lastMyAnswer = data
+
+      if (data) answerSubmitting = false
+
+      applyGuestView()
+
+    })
+
+
+
+    applyGuestView()
+
+  }
 
 
 
@@ -292,7 +428,13 @@ function mountGuestWaiting(container, userId) {
 
     if (q) {
 
-      drawQuestionOpen(container, participantLike, q)
+      drawQuestionOpen(container, participantLike, q, {
+
+        existingAnswer: lastMyAnswer,
+
+        submitting: answerSubmitting,
+
+      })
 
     } else {
 
@@ -301,6 +443,88 @@ function mountGuestWaiting(container, userId) {
     }
 
   }
+
+
+
+  async function onGuestOptionClick(e) {
+
+    const btn = e.target.closest('.guest-option-btn')
+
+    if (!(btn instanceof HTMLButtonElement)) return
+
+    if (btn.disabled) return
+
+
+
+    const optionIndex = Number.parseInt(btn.dataset.optionIndex ?? '', 10)
+
+    if (Number.isNaN(optionIndex)) return
+
+
+
+    if (lastMyAnswer || answerSubmitting) return
+
+
+
+    const phase = lastGame?.phase
+
+    const qIdx = lastGame?.questionIndex
+
+    if (phase !== 'question_open' || typeof qIdx !== 'number') return
+
+
+
+    const q = QUESTIONS[qIdx]
+
+    if (!q) return
+
+
+
+    const label = q.options[optionIndex]
+
+    if (label === undefined) return
+
+
+
+    answerSubmitting = true
+
+    applyGuestView()
+
+
+
+    try {
+
+      await saveNewAnswer(qIdx, userId, {
+
+        userId,
+
+        displayName: formatParticipantDisplay(lastParticipant ?? {}),
+
+        answer: label,
+
+        submittedAt: Date.now(),
+
+      })
+
+    } catch (err) {
+
+      console.error(err)
+
+      answerSubmitting = false
+
+      applyGuestView()
+
+    }
+
+  }
+
+
+
+  guestOptionDelegationTarget = container
+
+  guestOptionDelegationHandler = onGuestOptionClick
+
+  container.addEventListener('click', onGuestOptionClick)
 
 
 
@@ -322,7 +546,7 @@ function mountGuestWaiting(container, userId) {
 
     lastGame = game
 
-    applyGuestView()
+    resubscribeMyAnswer()
 
   })
 

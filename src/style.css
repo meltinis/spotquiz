@@ -148,6 +148,72 @@ p {
   border-color: #6baee0;
 }
 
+.guest-option-btn:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.guest-answer-registered {
+  margin: 0 0 0.75rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #14532d;
+}
+
+.admin-game-status {
+  margin-bottom: 1.25rem;
+}
+
+.admin-game-panel {
+  padding: 1rem 1rem 0.85rem;
+  background: #faf6f0;
+  border: 1px solid #d9cfc2;
+  border-radius: 8px;
+}
+
+.admin-game-heading {
+  margin: 0 0 0.75rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.admin-game-dl {
+  margin: 0;
+}
+
+.admin-game-dl-row {
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: 0.35rem 1rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid #e8dfd4;
+  font-size: 0.9375rem;
+}
+
+.admin-game-dl-row:last-child {
+  border-bottom: none;
+}
+
+.admin-game-dl dt {
+  margin: 0;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.admin-game-dl dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.admin-game-muted {
+  opacity: 0.8;
+}
+
+.admin-game-progress {
+  margin: 0.75rem 0 0;
+  font-size: 0.9375rem;
+}
+
 .admin-banner {
   margin-bottom: 1rem;
   padding: 0.5rem 0.65rem;
