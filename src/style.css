@@ -32,6 +32,10 @@ body {
   max-width: 56rem;
 }
 
+.page-admin #app {
+  max-width: 52rem;
+}
+
 h1 {
   margin: 0 0 0.75rem;
   font-size: 1.75rem;
@@ -109,4 +113,111 @@ p {
 .guest-waiting-secondary {
   margin-top: 1rem;
   font-size: 0.9375rem;
+}
+
+.guest-question-text {
+  margin: 0.75rem 0 1rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.45;
+  opacity: 1;
+}
+
+.guest-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 22rem;
+  margin-bottom: 0.25rem;
+}
+
+.guest-option-btn {
+  padding: 0.55rem 0.75rem;
+  font: inherit;
+  text-align: left;
+  font-weight: 500;
+  color: #132f4a;
+  background: #fff;
+  border: 1px solid #9ec5e8;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.guest-option-btn:hover {
+  background: #f0f7fd;
+  border-color: #6baee0;
+}
+
+.admin-banner {
+  margin-bottom: 1rem;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.875rem;
+  background: #fce8e6;
+  color: #5c2713;
+  border-radius: 6px;
+  opacity: 1;
+}
+
+.admin-empty {
+  margin: 1rem 0 0;
+  opacity: 0.9;
+}
+
+.admin-participant-list {
+  margin: 1.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid #d9cfc2;
+}
+
+.admin-display-name {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.admin-short-id {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8125rem;
+  opacity: 0.75;
+}
+
+.admin-name-input {
+  flex: 1 1 10rem;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  border: 1px solid #aa9b88;
+  border-radius: 6px;
+}
+
+.admin-btn {
+  padding: 0.35rem 0.65rem;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 6px;
+  background: #3d3429;
+  color: #faf7f2;
+  cursor: pointer;
+}
+
+.admin-btn:hover {
+  background: #2a231c;
+}
+
+.admin-btn-secondary {
+  background: #8c7f6d;
+}
+
+.admin-btn-secondary:hover {
+  background: #74685a;
 }

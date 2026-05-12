@@ -1,7 +1,7 @@
 import './style.css'
 import { testRealtimeConnection } from './firebase.js'
-import { renderGuest } from './guest.js'
-import { renderAdmin } from './admin.js'
+import { disposeGuestSubscriptions, renderGuest } from './guest.js'
+import { disposeAdminSubscriptions, renderAdmin } from './admin.js'
 import { renderScreen } from './screen.js'
 
 const appEl = document.getElementById('app')
@@ -16,6 +16,9 @@ function currentPathname() {
 }
 
 function route() {
+  disposeAdminSubscriptions()
+  disposeGuestSubscriptions()
+
   const path = currentPathname()
 
   if (path === '/admin') {
