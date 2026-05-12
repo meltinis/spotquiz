@@ -48,6 +48,8 @@ import { subscribeGame, maybeAutoCloseExpiredQuestion } from './game.js'
 
 import { QUESTIONS } from './questions.js'
 
+import { formatAnswerDisplayText } from './questionDisplay.js'
+
 import {
 
   subscribeUserAnswer,
@@ -994,6 +996,7 @@ function drawQuestionIntroOrReveal(
 
   const cards = question.options
     .map((label, i) => {
+      const displayLabel = formatAnswerDisplayText(label)
       const shapeClass =
         GUEST_OPTION_SHAPE_CLASSES[i] ?? GUEST_OPTION_SHAPE_CLASSES[0]
       const visible = i < visibleCount
@@ -1006,10 +1009,10 @@ function drawQuestionIntroOrReveal(
         data-option-index="${i}"
         disabled
         aria-hidden="${visible ? 'false' : 'true'}"
-        aria-label="${escapeHtml(`${t('guest.answerAriaPrefix')} ${i + 1}: ${label}`)}"
+        aria-label="${escapeHtml(`${t('guest.answerAriaPrefix')} ${i + 1}: ${displayLabel}`)}"
       >
         <span class="guest-option-shape ${shapeClass}" aria-hidden="true"></span>
-        <span class="guest-option-label">${escapeHtml(label)}</span>
+        <span class="guest-option-label">${escapeHtml(displayLabel)}</span>
       </button>
     `
     })
@@ -1105,6 +1108,8 @@ function drawQuestionOpen(
 
     .map((label, i) => {
 
+      const displayLabel = formatAnswerDisplayText(label)
+
       const shapeClass =
 
         GUEST_OPTION_SHAPE_CLASSES[i] ?? GUEST_OPTION_SHAPE_CLASSES[0]
@@ -1125,13 +1130,13 @@ function drawQuestionOpen(
 
         ${locked ? 'disabled' : ''}
 
-        aria-label="${escapeHtml(`${t('guest.answerAriaPrefix')} ${i + 1}: ${label}`)}"
+        aria-label="${escapeHtml(`${t('guest.answerAriaPrefix')} ${i + 1}: ${displayLabel}`)}"
 
       >
 
         <span class="guest-option-shape ${shapeClass}" aria-hidden="true"></span>
 
-        <span class="guest-option-label">${escapeHtml(label)}</span>
+        <span class="guest-option-label">${escapeHtml(displayLabel)}</span>
 
       </button>
 

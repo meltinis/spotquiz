@@ -13,6 +13,7 @@ import {
 } from './adminParticipants.js'
 import { PARTICIPANT_ROLE_GUEST, PARTICIPANT_ROLE_CONFIRMAND } from './routeRole.js'
 import { QUESTIONS, QUESTION_COUNT } from './questions.js'
+import { formatAnswerDisplayText } from './questionDisplay.js'
 
 let screenGameUnsubscribe = null
 let screenAnswersUnsubscribe = null
@@ -73,80 +74,50 @@ function confirmandAnswerFromMap(answersMap) {
   return null
 }
 
-/** This round: time from question start to submit (for scoreboard column). */
-function averageAnswerTimeForRound(questionResult, userId) {
-  const scored = questionResult && questionResult.scored === true
-  if (!scored) return t('common.emDash')
-  const startedAt = questionResult.startedAt
-  const submittedAt = questionResult.scores?.[userId]?.submittedAt
-  if (typeof startedAt !== 'number' || typeof submittedAt !== 'number') {
-    return t('common.emDash')
+function cumulativePointsForUser(scoresMap, userId) {
+  const v = scoresMap?.[userId]
+  if (typeof v === 'number' && Number.isFinite(v)) return v
+  if (v && typeof v.totalPoints === 'number' && Number.isFinite(v.totalPoints)) {
+    return v.totalPoints
   }
-  const sec = (submittedAt - startedAt) / 1000
-  if (!Number.isFinite(sec) || sec < 0) return t('common.emDash')
-  return `${sec.toFixed(1)}${t('common.secondsUnit')}`
+  return 0
 }
 
-function scoreboardRowsHtml(participantsMap, scoresMap, questionResult) {
-  const guests = sortParticipantsByDisplayName(participantsMap).filter(
-    ([, p]) => p && p.role === PARTICIPANT_ROLE_GUEST,
-  )
-  if (guests.length === 0) {
-    return `<p class="screen-muted">${escapeHtml(t('screen.noGuests'))}</p>`
+function countGuestParticipants(participantsMap) {
+  let n = 0
+  for (const p of Object.values(participantsMap || {})) {
+    if (p && p.role === PARTICIPANT_ROLE_GUEST) n++
   }
-  const scored = questionResult && questionResult.scored === true
-  const em = t('common.emDash')
-  const rows = guests
-    .map(([userId, p]) => {
-      const raw = scoresMap?.[userId]
-      const total = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0
-      const s = questionResult?.scores?.[userId]
-      let roundPts = em
-      let avgAnswerStr = em
-      if (scored) {
-        if (s && typeof s.totalPoints === 'number') {
-          roundPts = String(s.totalPoints)
-        } else {
-          roundPts = '0'
-        }
-        avgAnswerStr = averageAnswerTimeForRound(questionResult, userId)
-      }
-      return { name: formatParticipantDisplay(p), total, roundPts, avgAnswerStr }
-    })
-    .sort((a, b) => {
-      if (b.total !== a.total) return b.total - a.total
-      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
-    })
-    .map(
-      ({ name, total, roundPts, avgAnswerStr }) =>
-        `<tr><td class="screen-score-name">${escapeHtml(name)}</td><td class="screen-score-round">${escapeHtml(roundPts)}</td><td class="screen-score-avgtime">${escapeHtml(avgAnswerStr)}</td><td class="screen-score-total">${total}</td></tr>`,
-    )
-  return `
-    <table class="screen-scoreboard">
-      <thead>
-        <tr>
-          <th scope="col">${escapeHtml(t('screen.colPlayer'))}</th>
-          <th scope="col">${escapeHtml(t('screen.colRound'))}</th>
-          <th scope="col">${escapeHtml(t('screen.colAvgAnswer'))}</th>
-          <th scope="col">${escapeHtml(t('screen.colTotal'))}</th>
-        </tr>
-      </thead>
-      <tbody>${rows.join('')}</tbody>
-    </table>`
+  return n
 }
 
-function questionProgressHtml(phase, idx) {
-  const qWord = escapeHtml(t('common.questionNoun'))
-  if (phase === 'waiting') {
-    return `${qWord} <strong>—</strong> / <strong>${QUESTION_COUNT}</strong>`
+function roundCorrectGuestCount(questionResult) {
+  if (!questionResult?.scores) return 0
+  let n = 0
+  for (const row of Object.values(questionResult.scores)) {
+    if (row && row.correct === true) n++
   }
-  if (typeof idx !== 'number' || idx < 0 || idx >= QUESTIONS.length) {
-    return `${qWord} <strong>—</strong> / <strong>${QUESTION_COUNT}</strong>`
-  }
-  return `${qWord} <strong>${idx + 1}</strong> / <strong>${QUESTION_COUNT}</strong>`
+  return n
 }
 
-/** Shape icon class per option index (0–3). */
+/** Mean time-to-answer (seconds) for this round across guests with a submitted time. */
+function roundAverageAnswerSeconds(questionResult) {
+  if (!questionResult?.scored || typeof questionResult.startedAt !== 'number') {
+    return null
+  }
+  const started = questionResult.startedAt
+  const deltas = []
+  for (const row of Object.values(questionResult.scores || {})) {
+    if (!row || typeof row.submittedAt !== 'number') continue
+    const d = row.submittedAt - started
+    if (Number.isFinite(d) && d >= 0) deltas.push(d)
+  }
+  if (deltas.length === 0) return null
+  const avgMs = deltas.reduce((a, b) => a + b, 0) / deltas.length
+  return avgMs / 1000
+}
+
+/** Shape icon class per option index (0–3) — matches guest page. */
 const SCREEN_OPTION_SHAPE_CLASSES = [
   'guest-option-shape-triangle',
   'guest-option-shape-diamond',
@@ -155,10 +126,7 @@ const SCREEN_OPTION_SHAPE_CLASSES = [
 ]
 
 /**
- * Renders the 4 answer cards on the screen page. Options past `revealedCount` are
- * rendered hidden so layout doesn't jump when the rest pop in. The pop-in animation
- * is only applied when `animateReveal` is true (reveal phase) to avoid replaying it
- * on every redraw of the countdown.
+ * Progressive reveal (intro / reveal phases). Options past `revealedCount` stay hidden.
  */
 function screenOptionsHtml(question, revealedCount, animateReveal) {
   const total = question.options.length
@@ -168,6 +136,7 @@ function screenOptionsHtml(question, revealedCount, animateReveal) {
   )
   const cards = question.options
     .map((label, i) => {
+      const displayLabel = formatAnswerDisplayText(label)
       const shapeClass =
         SCREEN_OPTION_SHAPE_CLASSES[i] ?? SCREEN_OPTION_SHAPE_CLASSES[0]
       const visible = i < visibleCount
@@ -180,11 +149,96 @@ function screenOptionsHtml(question, revealedCount, animateReveal) {
           aria-hidden="${visible ? 'false' : 'true'}"
         >
           <span class="guest-option-shape ${shapeClass}" aria-hidden="true"></span>
-          <span class="screen-option-label">${escapeHtml(label)}</span>
+          <span class="screen-option-label">${escapeHtml(displayLabel)}</span>
         </div>`
     })
     .join('')
   return `<div class="screen-options-grid">${cards}</div>`
+}
+
+/** Result phase: large centered correct card when known; dimmed row of incorrect (same colors/shapes as guest). */
+function screenResultOptionsHtml(question, correctRaw, showOutcome) {
+  const correctIdx =
+    correctRaw != null && typeof correctRaw === 'string'
+      ? question.options.findIndex((o) => o === correctRaw)
+      : -1
+  const cardHtml = (i, outcomeClass) => {
+    const label = question.options[i]
+    const displayLabel = formatAnswerDisplayText(label)
+    const shapeClass =
+      SCREEN_OPTION_SHAPE_CLASSES[i] ?? SCREEN_OPTION_SHAPE_CLASSES[0]
+    return `
+        <div class="screen-option-card option-${i} screen-option-card--static${outcomeClass}">
+          <span class="guest-option-shape ${shapeClass}" aria-hidden="true"></span>
+          <span class="screen-option-label">${escapeHtml(displayLabel)}</span>
+        </div>`
+  }
+  if (showOutcome && correctIdx >= 0) {
+    const hero = cardHtml(correctIdx, ' screen-option-card--result-correct')
+    const rest = question.options
+      .map((_, i) =>
+        i === correctIdx ? '' : cardHtml(i, ' screen-option-card--result-wrong'),
+      )
+      .join('')
+    return `<div class="screen-result-hero">${hero}</div><div class="screen-result-rest">${rest}</div>`
+  }
+  return question.options
+    .map((_, i) => cardHtml(i, ''))
+    .join('')
+}
+
+function topFiveBoardHtml(participantsMap, scoresMap, prevTop5Order) {
+  const guests = sortParticipantsByDisplayName(participantsMap).filter(
+    ([, p]) => p && p.role === PARTICIPANT_ROLE_GUEST,
+  )
+  if (guests.length === 0) {
+    return {
+      html: `<p class="screen-muted screen-top5-empty">${escapeHtml(t('screen.noGuests'))}</p>`,
+      order: [],
+    }
+  }
+  const rows = guests.map(([userId, p]) => ({
+    userId,
+    name: formatParticipantDisplay(p),
+    pts: cumulativePointsForUser(scoresMap, userId),
+  }))
+  rows.sort((a, b) => {
+    if (b.pts !== a.pts) return b.pts - a.pts
+    return a.userId.localeCompare(b.userId)
+  })
+  const top = rows.slice(0, 5)
+  const newOrder = top.map((r) => r.userId)
+  const prev = prevTop5Order || []
+  const items = top.map((r, i) => {
+    const rank = i + 1
+    let moveClass = ' screen-top5-row--same'
+    if (prev.length > 0) {
+      const prevPos = prev.indexOf(r.userId)
+      if (prevPos < 0) moveClass = ' screen-top5-row--new'
+      else if (prevPos > i) moveClass = ' screen-top5-row--up'
+      else if (prevPos < i) moveClass = ' screen-top5-row--down'
+      else moveClass = ' screen-top5-row--same'
+    }
+    return `
+      <div class="screen-top5-row${moveClass}">
+        <span class="screen-top5-rank">${rank}</span>
+        <span class="screen-top5-name">${escapeHtml(r.name)}</span>
+        <span class="screen-top5-pts">${escapeHtml(String(r.pts))}</span>
+      </div>`
+  })
+  return {
+    html: `
+      <div class="screen-top5">
+        <h3 class="screen-top5-heading">${escapeHtml(t('screen.top5Heading'))}</h3>
+        <div class="screen-top5-head">
+          <span>${escapeHtml(t('screen.top5ColRank'))}</span>
+          <span>${escapeHtml(t('screen.top5ColName'))}</span>
+          <span>${escapeHtml(t('screen.top5ColPoints'))}</span>
+        </div>
+        <div class="screen-top5-body">${items.join('')}</div>
+      </div>`,
+    order: newOrder,
+  }
 }
 
 function remainingMsFromClosesAt(closesAt) {
@@ -199,6 +253,33 @@ function formatScreenCountdown(remainingMs) {
   return `${m}:${String(sec).padStart(2, '0')}`
 }
 
+function questionProgressHtml(phase, idx) {
+  const qWord = escapeHtml(t('common.questionNoun'))
+  if (phase === 'waiting') {
+    return `${qWord} <strong>—</strong> / <strong>${QUESTION_COUNT}</strong>`
+  }
+  if (typeof idx !== 'number' || idx < 0 || idx >= QUESTIONS.length) {
+    return `${qWord} <strong>—</strong> / <strong>${QUESTION_COUNT}</strong>`
+  }
+  return `${qWord} <strong>${idx + 1}</strong> / <strong>${QUESTION_COUNT}</strong>`
+}
+
+function paintScreen(container, html, transitionKey, lastKeyRef) {
+  const useVt =
+    transitionKey != null &&
+    transitionKey !== lastKeyRef.current &&
+    typeof document !== 'undefined' &&
+    typeof document.startViewTransition === 'function'
+  lastKeyRef.current = transitionKey
+  if (useVt) {
+    document.startViewTransition(() => {
+      container.innerHTML = html
+    })
+  } else {
+    container.innerHTML = html
+  }
+}
+
 export function renderScreen(container) {
   disposeScreenSubscriptions()
 
@@ -207,6 +288,8 @@ export function renderScreen(container) {
   let scoresMap = {}
   let participantsMap = {}
   let questionResult = null
+  let lastTransitionKey = { current: null }
+  let lastTop5Order = []
 
   function resubscribeAnswers() {
     if (screenAnswersUnsubscribe) {
@@ -258,6 +341,7 @@ export function renderScreen(container) {
 
   function draw() {
     if (!db) {
+      lastTransitionKey.current = null
       container.innerHTML = `
         <div class="screen-empty">
           <h1 class="screen-headline">${escapeHtml(t('screen.headline'))}</h1>
@@ -267,12 +351,17 @@ export function renderScreen(container) {
     }
 
     if (!gameState) {
-      container.innerHTML = `
+      paintScreen(
+        container,
+        `
         <div class="screen-empty">
           <h1 class="screen-headline">${escapeHtml(t('screen.headline'))}</h1>
           <p class="screen-progress">${questionProgressHtml('waiting', 0)}</p>
           <p class="screen-lede">${escapeHtml(t('screen.waitingGameState'))}</p>
-        </div>`
+        </div>`,
+        'empty',
+        lastTransitionKey,
+      )
       return
     }
 
@@ -283,69 +372,153 @@ export function renderScreen(container) {
         ? QUESTIONS[idx]
         : undefined
 
+    const transitionKey = `${phase}:${typeof idx === 'number' ? idx : 'x'}`
+
     if (
       (phase === 'question_intro' || phase === 'question_reveal_answers') &&
       q
     ) {
       const revealedCount =
         phase === 'question_intro' ? 0 : (gameState.revealedCount ?? 0)
-      container.innerHTML = `
-      <div class="screen-layout">
-        <p class="screen-progress">${questionProgressHtml(phase, idx)}</p>
-        <p class="screen-question">${escapeHtml(q.text)}</p>
+
+      const revealRoot = container.querySelector(
+        '.screen-show--intro[data-reveal-q-idx]',
+      )
+      if (
+        revealRoot &&
+        revealRoot.getAttribute('data-reveal-q-idx') === String(idx) &&
+        revealRoot.getAttribute('data-screen-phase') === phase
+      ) {
+        const oldGrid = revealRoot.querySelector('.screen-options-grid')
+        if (oldGrid) {
+          const wrap = document.createElement('div')
+          wrap.innerHTML = screenOptionsHtml(q, revealedCount, true)
+          const newGrid = wrap.firstElementChild
+          if (newGrid) {
+            oldGrid.replaceWith(newGrid)
+            return
+          }
+        }
+      }
+
+      const html = `
+      <div class="screen-show screen-show--intro" data-screen-phase="${escapeHtml(String(phase))}" data-reveal-q-idx="${idx}">
+        <div class="screen-pill">${questionProgressHtml(phase, idx)}</div>
+        <h2 class="screen-question screen-question--hero">${escapeHtml(q.text)}</h2>
         ${screenOptionsHtml(q, revealedCount, true)}
       </div>`
+      paintScreen(container, html, transitionKey, lastTransitionKey)
       return
     }
 
     if (phase === 'question_open' && q) {
       const answered =
         typeof idx === 'number' ? Object.keys(answersForQuestion).length : 0
+      const guestTotal = countGuestParticipants(participantsMap)
       const remainingMs = remainingMsFromClosesAt(gameState.closesAt)
-      const countdownLine = `<p class="screen-countdown">${escapeHtml(t('guest.timeLeftPrefix'))} ${escapeHtml(formatScreenCountdown(remainingMs))}</p>`
+      const digits = escapeHtml(formatScreenCountdown(remainingMs))
       const totalOptions = q.options.length
-      container.innerHTML = `
-      <div class="screen-layout">
-        <p class="screen-progress">${questionProgressHtml(phase, idx)}</p>
-        <p class="screen-question">${escapeHtml(q.text)}</p>
+
+      const openRoot = container.querySelector('.screen-show--open[data-open-idx]')
+      if (openRoot && openRoot.getAttribute('data-open-idx') === String(idx)) {
+        const timerBlock = openRoot.querySelector('.screen-timer-block')
+        const digitsEl = timerBlock?.querySelector('.screen-timer-digits')
+        const progress = openRoot.querySelector('.screen-answer-progress')
+        const nums = progress?.querySelectorAll('.screen-answer-progress-num')
+        if (digitsEl && nums && nums.length >= 2) {
+          digitsEl.textContent = formatScreenCountdown(remainingMs)
+          nums[0].textContent = String(answered)
+          nums[1].textContent = String(guestTotal)
+          openRoot.setAttribute('data-live-answered', String(answered))
+          openRoot.setAttribute('data-live-guest-total', String(guestTotal))
+          return
+        }
+      }
+
+      const html = `
+      <div class="screen-show screen-show--open" data-screen-phase="question_open" data-open-idx="${idx}" data-live-answered="${answered}" data-live-guest-total="${guestTotal}">
+        <div class="screen-pill">${questionProgressHtml(phase, idx)}</div>
+        <h2 class="screen-question screen-question--hero">${escapeHtml(q.text)}</h2>
         ${screenOptionsHtml(q, totalOptions, false)}
-        ${countdownLine}
-        <p class="screen-count">${answered} ${escapeHtml(t('screen.answered'))}</p>
+        <div class="screen-timer-block">
+          <div class="screen-timer-digits">${digits}</div>
+          <div class="screen-timer-caption">${escapeHtml(t('screen.timerCaption'))}</div>
+        </div>
+        <div class="screen-answer-progress">
+          <span class="screen-answer-progress-num">${answered}</span>
+          <span class="screen-answer-progress-sep">/</span>
+          <span class="screen-answer-progress-num">${guestTotal}</span>
+          <span class="screen-answer-progress-suffix">${escapeHtml(t('screen.answerProgressSuffix'))}</span>
+        </div>
       </div>`
+      paintScreen(container, html, transitionKey, lastTransitionKey)
       return
     }
 
     if (phase === 'question_closed' && q) {
       const scored = questionResult && questionResult.scored === true
       const confirmandAns = confirmandAnswerFromMap(answersForQuestion)
-      let correctLine
-      if (scored) {
-        correctLine = `<p class="screen-correct"><span class="screen-label">${escapeHtml(t('screen.correctAnswer'))}</span> ${escapeHtml(String(questionResult.correctAnswer))}</p>`
-      } else if (confirmandAns != null) {
-        correctLine = `<p class="screen-correct"><span class="screen-label">${escapeHtml(t('screen.correctAnswer'))}</span> ${escapeHtml(String(confirmandAns))}</p><p class="screen-muted">${escapeHtml(t('screen.applyingScores'))}</p>`
-      } else {
-        correctLine = `<p class="screen-correct screen-warn">${escapeHtml(t('screen.noConfirmandScores'))}</p>`
+      const correctRaw = scored
+        ? questionResult.correctAnswer
+        : confirmandAns != null
+          ? confirmandAns
+          : null
+      const showOutcome = scored || confirmandAns != null
+
+      let bannerHtml = ''
+      if (!scored && confirmandAns == null) {
+        bannerHtml = `<p class="screen-result-banner screen-result-banner--warn">${escapeHtml(t('screen.noConfirmandScores'))}</p>`
+      } else if (!scored && confirmandAns != null) {
+        bannerHtml = `<p class="screen-result-banner">${escapeHtml(t('screen.applyingScores'))}</p>`
       }
-      const board = scoreboardRowsHtml(participantsMap, scoresMap, questionResult)
-      const questionRecall = `<p class="screen-question screen-question-recap">${escapeHtml(q.text)}</p>`
-      container.innerHTML = `
-      <div class="screen-layout screen-layout-results">
-        <p class="screen-progress">${questionProgressHtml(phase, idx)}</p>
-        ${questionRecall}
-        ${correctLine}
-        <div class="screen-scoreboard-wrap">
-          <h2 class="screen-scoreboard-title">${escapeHtml(t('screen.scoreboard'))}</h2>
-          ${board}
+
+      const correctCount = scored ? roundCorrectGuestCount(questionResult) : null
+      const avgSec = scored ? roundAverageAnswerSeconds(questionResult) : null
+      let statsHtml = ''
+      if (scored) {
+        const avgLine =
+          avgSec != null && Number.isFinite(avgSec)
+            ? `<div class="screen-round-stat"><span class="screen-round-stat-label">${escapeHtml(t('screen.roundAvgSpeed'))}</span> <span class="screen-round-stat-value">${escapeHtml(`${avgSec.toFixed(1)}${t('common.secondsUnit')}`)}</span></div>`
+            : ''
+        statsHtml = `
+        <div class="screen-round-stats">
+          <div class="screen-round-stat">
+            <span class="screen-round-stat-label">${escapeHtml(t('screen.roundCorrectGuests'))}</span>
+            <span class="screen-round-stat-value">${correctCount}</span>
+          </div>
+          ${avgLine}
+        </div>`
+      }
+
+      const top = topFiveBoardHtml(participantsMap, scoresMap, lastTop5Order)
+      lastTop5Order = top.order
+
+      const html = `
+      <div class="screen-show screen-show--closed" data-screen-phase="question_closed">
+        <div class="screen-pill">${questionProgressHtml(phase, idx)}</div>
+        <h2 class="screen-question screen-question--hero screen-question--recap">${escapeHtml(q.text)}</h2>
+        <p class="screen-result-label">${escapeHtml(t('screen.correctAnswer'))}</p>
+        <div class="screen-result-grid">
+          ${screenResultOptionsHtml(q, correctRaw, showOutcome)}
         </div>
+        ${bannerHtml}
+        ${statsHtml}
+        ${top.html}
       </div>`
+      paintScreen(container, html, transitionKey, lastTransitionKey)
       return
     }
 
-    container.innerHTML = `
-      <div class="screen-layout">
-        <p class="screen-progress">${questionProgressHtml(phase, idx)}</p>
-        <p class="screen-question screen-muted">${escapeHtml(t('screen.waitingNextQuestion'))}</p>
-      </div>`
+    paintScreen(
+      container,
+      `
+      <div class="screen-show screen-show--idle">
+        <div class="screen-pill">${questionProgressHtml(phase, idx)}</div>
+        <p class="screen-question screen-muted screen-question--idle">${escapeHtml(t('screen.waitingNextQuestion'))}</p>
+      </div>`,
+      transitionKey,
+      lastTransitionKey,
+    )
   }
 
   if (!db) {
