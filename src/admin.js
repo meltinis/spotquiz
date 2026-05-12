@@ -1,7 +1,13 @@
 import { db } from './firebase.js'
-import { startQuestion, subscribeGame } from './game.js'
+import {
+  startQuestion,
+  closeQuestion,
+  nextQuestion,
+  resetGame,
+  subscribeGame,
+} from './game.js'
 import { subscribeAnswersForQuestion } from './answers.js'
-import { QUESTIONS } from './questions.js'
+import { QUESTIONS, QUESTION_COUNT } from './questions.js'
 import {
   rawParticipantDisplay,
   formatParticipantDisplay,
@@ -9,6 +15,10 @@ import {
   subscribeParticipants,
   updateParticipantDisplayName,
 } from './adminParticipants.js'
+import {
+  PARTICIPANT_ROLE_CONFIRMAND,
+  PARTICIPANT_ROLE_GUEST,
+} from './routeRole.js'
 
 let participantUnsubscribe = null
 let gameUnsubscribe = null
@@ -43,6 +53,30 @@ function escapeAttr(text) {
     .replace(/</g, '&lt;')
 }
 
+/** First participant with confirmand role in Firebase, if any. */
+function findConfirmandEntry(map) {
+  for (const [userId, p] of Object.entries(map || {})) {
+    if (p && p.role === PARTICIPANT_ROLE_CONFIRMAND)
+      return { userId, participant: p }
+  }
+  return null
+}
+
+/** Answer row where `answers/{questionIndex}/{userId}.role` is confirmand. */
+function findConfirmandAnswerEntry(answersMap) {
+  for (const [userId, ans] of Object.entries(answersMap || {})) {
+    if (ans && ans.role === PARTICIPANT_ROLE_CONFIRMAND)
+      return { userId, answer: ans }
+  }
+  return null
+}
+
+function participantRoleLabel(p) {
+  return p && p.role === PARTICIPANT_ROLE_CONFIRMAND
+    ? PARTICIPANT_ROLE_CONFIRMAND
+    : PARTICIPANT_ROLE_GUEST
+}
+
 export function renderAdmin(container) {
   disposeAdminSubscriptions()
 
@@ -55,20 +89,129 @@ export function renderAdmin(container) {
   container.innerHTML = `
     <h1>Admin</h1>
     <p>Set up rounds, prompts, and see who confirmed in real time.</p>
-    <p>
-      <button type="button" class="admin-btn" id="admin-start-question">
-        Start Question
-      </button>
+    <p class="admin-game-actions">
+      <span class="admin-game-actions-main">
+        <button type="button" class="admin-btn" id="admin-start-question">
+          Start Question
+        </button>
+        <button type="button" class="admin-btn" id="admin-close-question">
+          Close Question
+        </button>
+        <button type="button" class="admin-btn" id="admin-next-question">
+          Next Question
+        </button>
+      </span>
+      <span class="admin-game-actions-aside">
+        <button type="button" class="admin-btn admin-btn-secondary" id="admin-reset-game">
+          Reset Game
+        </button>
+      </span>
     </p>
+    <dialog class="admin-reset-dialog" id="admin-reset-dialog" aria-labelledby="admin-reset-dialog-title">
+      <div class="admin-reset-dialog-panel">
+        <h3 class="admin-reset-dialog-title" id="admin-reset-dialog-title">Reset game</h3>
+        <p class="admin-reset-dialog-lede">
+          This clears all answers and scores. Participants stay.
+        </p>
+        <label class="admin-reset-dialog-label" for="admin-reset-confirm-input">
+          Type <strong>RESET</strong> to confirm
+        </label>
+        <input
+          class="admin-reset-dialog-input"
+          id="admin-reset-confirm-input"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          maxlength="32"
+        />
+        <p class="admin-reset-dialog-error" id="admin-reset-dialog-error" hidden></p>
+        <div class="admin-reset-dialog-actions">
+          <button type="button" class="admin-btn admin-btn-secondary" id="admin-reset-cancel">
+            Cancel
+          </button>
+          <button type="button" class="admin-btn" id="admin-reset-confirm">Reset game</button>
+        </div>
+      </div>
+    </dialog>
     <p class="admin-banner" id="admin-banner" hidden></p>
     <div id="admin-game-status" class="admin-game-status"></div>
+    <div id="admin-confirmand-panel" class="admin-confirmand-panel" aria-live="polite"></div>
     <div id="admin-participants"></div>
   `
 
   const bannerEl = container.querySelector('#admin-banner')
   const gameStatusMount = container.querySelector('#admin-game-status')
+  const confirmandMount = container.querySelector('#admin-confirmand-panel')
   const listMount = container.querySelector('#admin-participants')
   const startQuestionBtn = container.querySelector('#admin-start-question')
+  const closeQuestionBtn = container.querySelector('#admin-close-question')
+  const nextQuestionBtn = container.querySelector('#admin-next-question')
+  const resetGameBtn = container.querySelector('#admin-reset-game')
+  const resetDialog = container.querySelector('#admin-reset-dialog')
+  const resetConfirmInput = container.querySelector('#admin-reset-confirm-input')
+  const resetDialogError = container.querySelector('#admin-reset-dialog-error')
+  const resetCancelBtn = container.querySelector('#admin-reset-cancel')
+  const resetConfirmBtn = container.querySelector('#admin-reset-confirm')
+
+  function openResetDialog() {
+    if (!(resetDialog instanceof HTMLDialogElement)) return
+    bannerText = ''
+    if (resetDialogError) {
+      resetDialogError.hidden = true
+      resetDialogError.textContent = ''
+    }
+    if (resetConfirmInput instanceof HTMLInputElement) {
+      resetConfirmInput.value = ''
+    }
+    resetDialog.showModal()
+    resetConfirmInput?.focus()
+  }
+
+  function closeResetDialog() {
+    if (resetDialog instanceof HTMLDialogElement) resetDialog.close()
+  }
+
+  resetGameBtn?.addEventListener('click', () => {
+    bannerText = ''
+    bannerEl.hidden = true
+    bannerEl.textContent = ''
+    openResetDialog()
+  })
+
+  resetCancelBtn?.addEventListener('click', () => {
+    closeResetDialog()
+  })
+
+  resetConfirmInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      resetConfirmBtn?.click()
+    }
+  })
+
+  resetConfirmBtn?.addEventListener('click', async () => {
+    if (!(resetConfirmInput instanceof HTMLInputElement) || !resetDialogError) return
+    resetDialogError.hidden = true
+    resetDialogError.textContent = ''
+    if (resetConfirmInput.value !== 'RESET') {
+      resetDialogError.textContent = 'Type RESET exactly (all caps).'
+      resetDialogError.hidden = false
+      return
+    }
+    try {
+      await resetGame()
+      bannerText = ''
+      closeResetDialog()
+      draw()
+    } catch (err) {
+      console.error(err)
+      resetDialogError.textContent =
+        typeof err.message === 'string'
+          ? err.message
+          : 'Could not reset game.'
+      resetDialogError.hidden = false
+    }
+  })
 
   function resubscribeAnswersForCurrentQuestion() {
     if (answersUnsubscribe) {
@@ -78,7 +221,11 @@ export function renderAdmin(container) {
     answersForQuestion = {}
     const phase = gameState?.phase
     const qIdx = gameState?.questionIndex
-    if (!db || typeof qIdx !== 'number' || phase !== 'question_open') {
+    if (
+      !db ||
+      typeof qIdx !== 'number' ||
+      (phase !== 'question_open' && phase !== 'question_closed')
+    ) {
       return
     }
     answersUnsubscribe = subscribeAnswersForQuestion(qIdx, (map) => {
@@ -87,18 +234,34 @@ export function renderAdmin(container) {
     })
   }
 
+  function questionProgressInnerHtml(phase, idx) {
+    if (phase === 'waiting') {
+      return `<strong>—</strong> / <strong>${QUESTION_COUNT}</strong>`
+    }
+    if (typeof idx !== 'number' || idx < 0 || idx >= QUESTIONS.length) {
+      return `<strong>—</strong> / <strong>${QUESTION_COUNT}</strong>`
+    }
+    return `<strong>${idx + 1}</strong> / <strong>${QUESTION_COUNT}</strong>`
+  }
+
   function gameStatusHtml() {
     if (!gameState) {
       return `
         <div class="admin-game-panel">
           <h2 class="admin-game-heading">Game status</h2>
+          <p class="admin-question-progress">Question ${questionProgressInnerHtml('waiting', 0)}</p>
           <p class="admin-game-muted">No active game yet. Use <strong>Start Question</strong> when ready.</p>
         </div>`
     }
 
     const idx = gameState.questionIndex
     const phase = gameState.phase ?? '—'
-    const q = typeof idx === 'number' ? QUESTIONS[idx] : undefined
+    const q =
+      phase === 'waiting'
+        ? undefined
+        : typeof idx === 'number' && idx >= 0 && idx < QUESTIONS.length
+          ? QUESTIONS[idx]
+          : undefined
     const questionText =
       q?.text != null ? escapeHtml(q.text) : `<span class="admin-game-muted">—</span>`
     const startedAt =
@@ -111,13 +274,15 @@ export function renderAdmin(container) {
         : '—'
     const participantsCount = Object.keys(participantsMap).length
     const answeredCount =
-      phase === 'question_open' && typeof idx === 'number'
+      (phase === 'question_open' || phase === 'question_closed') &&
+      typeof idx === 'number'
         ? Object.keys(answersForQuestion).length
         : 0
 
     return `
       <div class="admin-game-panel">
         <h2 class="admin-game-heading">Game status</h2>
+        <p class="admin-question-progress">Question ${questionProgressInnerHtml(phase, idx)}</p>
         <dl class="admin-game-dl">
           <div class="admin-game-dl-row">
             <dt>Phase</dt>
@@ -147,6 +312,42 @@ export function renderAdmin(container) {
       </div>`
   }
 
+  function confirmandPanelHtml() {
+    const c = findConfirmandEntry(participantsMap)
+    const confirmandAnswer = findConfirmandAnswerEntry(answersForQuestion)
+    const phase = gameState?.phase
+    const idx = gameState?.questionIndex
+    const onQuestion =
+      (phase === 'question_open' || phase === 'question_closed') &&
+      typeof idx === 'number'
+
+    let registration = ''
+    if (!c) {
+      registration = `<p class="admin-confirmand-row"><strong>Registration</strong>: <span class="admin-confirmand-no">No confirmand registered yet</span></p>`
+    } else {
+      const name = escapeHtml(formatParticipantDisplay(c.participant))
+      registration = `<p class="admin-confirmand-row"><strong>Registration</strong>: <span class="admin-confirmand-yes">Registered</span> as <strong>${name}</strong></p>`
+    }
+
+    let currentQ = ''
+    if (!onQuestion) {
+      currentQ = `<p class="admin-confirmand-row admin-confirmand-muted"><strong>Current question</strong>: — (start a question to track answers)</p>`
+    } else if (confirmandAnswer) {
+      currentQ = `<p class="admin-confirmand-row"><strong>Current question</strong>: <span class="admin-confirmand-answered">Has answered</span></p>`
+    } else if (!c) {
+      currentQ = `<p class="admin-confirmand-row"><strong>Current question</strong>: <span class="admin-confirmand-muted">N/A (no confirmand)</span></p>`
+    } else {
+      currentQ = `<p class="admin-confirmand-row"><strong>Current question</strong>: <span class="admin-confirmand-waiting">Not answered yet</span></p>`
+    }
+
+    return `
+      <div class="admin-confirmand-inner">
+        <h2 class="admin-confirmand-heading">Confirmand</h2>
+        ${registration}
+        ${currentQ}
+      </div>`
+  }
+
   startQuestionBtn?.addEventListener('click', async () => {
     bannerText = ''
     try {
@@ -157,6 +358,34 @@ export function renderAdmin(container) {
         typeof err.message === 'string'
           ? err.message
           : 'Could not start question.'
+    }
+    draw()
+  })
+
+  closeQuestionBtn?.addEventListener('click', async () => {
+    bannerText = ''
+    try {
+      await closeQuestion()
+    } catch (err) {
+      console.error(err)
+      bannerText =
+        typeof err.message === 'string'
+          ? err.message
+          : 'Could not close question.'
+    }
+    draw()
+  })
+
+  nextQuestionBtn?.addEventListener('click', async () => {
+    bannerText = ''
+    try {
+      await nextQuestion()
+    } catch (err) {
+      console.error(err)
+      bannerText =
+        typeof err.message === 'string'
+          ? err.message
+          : 'Could not advance to next question.'
     }
     draw()
   })
@@ -174,9 +403,15 @@ export function renderAdmin(container) {
 
       if (editingUserId === userId) {
         const valAttr = escapeAttr(rawParticipantDisplay(p))
+        const role = participantRoleLabel(p)
+        const roleClass =
+          role === PARTICIPANT_ROLE_CONFIRMAND
+            ? 'admin-role-confirmand'
+            : 'admin-role-guest'
         return `
           <li class="admin-row admin-row-edit" data-user-id="${idAttr}">
             <input type="text" class="admin-name-input" maxlength="80" value="${valAttr}" aria-label="Display name" />
+            <span class="admin-role-pill ${roleClass}">${escapeHtml(role)}</span>
             <span class="admin-short-id">${shortId}</span>
             <button type="button" class="admin-btn" data-action="save">Save</button>
             <button type="button" class="admin-btn admin-btn-secondary" data-action="cancel">Cancel</button>
@@ -184,9 +419,15 @@ export function renderAdmin(container) {
       }
 
       const label = escapeHtml(formatParticipantDisplay(p))
+      const role = participantRoleLabel(p)
+      const roleClass =
+        role === PARTICIPANT_ROLE_CONFIRMAND
+          ? 'admin-role-confirmand'
+          : 'admin-role-guest'
       return `
         <li class="admin-row" data-user-id="${idAttr}">
           <span class="admin-display-name">${label}</span>
+          <span class="admin-role-pill ${roleClass}">${escapeHtml(role)}</span>
           <span class="admin-short-id">${shortId}</span>
           <button type="button" class="admin-btn" data-action="edit">Edit</button>
         </li>`
@@ -201,12 +442,22 @@ export function renderAdmin(container) {
 
     if (!db) {
       if (gameStatusMount) gameStatusMount.innerHTML = ''
+      if (confirmandMount) confirmandMount.innerHTML = ''
       listMount.innerHTML =
         '<p class="admin-empty">Connect Firebase (<code>VITE_FIREBASE_DATABASE_URL</code>) to manage participants.</p>'
       return
     }
     if (gameStatusMount) gameStatusMount.innerHTML = gameStatusHtml()
+    if (confirmandMount) confirmandMount.innerHTML = confirmandPanelHtml()
     listMount.innerHTML = participantRowsHtml()
+
+    const idx = gameState?.questionIndex
+    const phase = gameState?.phase
+    const onLastQuestion =
+      typeof idx === 'number' && idx >= QUESTION_COUNT - 1
+    const disableNext =
+      !gameState || phase === 'waiting' || onLastQuestion
+    if (nextQuestionBtn) nextQuestionBtn.disabled = disableNext
 
     const input = listMount.querySelector('.admin-name-input')
     if (input) {

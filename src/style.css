@@ -13,8 +13,101 @@ body {
   background-color: #e8f4fc;
 }
 
+.page-confirmand {
+  background-color: #e8f4fc;
+}
+
 .page-admin {
   background-color: #f0ebe3;
+}
+
+.page-dev {
+  background-color: #f5e6e8;
+}
+
+.page-reset-user {
+  background-color: #e8f4fc;
+}
+
+.reset-user-lede {
+  margin-top: 1rem;
+  line-height: 1.55;
+  max-width: 32rem;
+}
+
+.reset-user-btn {
+  margin-top: 0.5rem;
+  padding: 0.5rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: #1565c0;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.reset-user-btn:hover {
+  background: #0d47a1;
+}
+
+.reset-user-success {
+  margin-top: 1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #1b5e20;
+}
+
+.reset-user-next {
+  margin-top: 1rem;
+}
+
+.reset-user-next a {
+  font-weight: 600;
+  color: #0d47a1;
+}
+
+.dev-tools-disabled {
+  margin-top: 1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.dev-tools-warning {
+  margin-top: 1rem;
+  padding: 0.85rem 1rem;
+  background: #fff8e6;
+  border: 1px solid #e6c200;
+  border-radius: 8px;
+  line-height: 1.5;
+}
+
+.dev-tools-warning code {
+  font-size: 0.85em;
+}
+
+.dev-tools-success {
+  margin-top: 1rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #1b5e20;
+}
+
+.dev-tools-delete-btn {
+  margin-top: 0.5rem;
+  padding: 0.5rem 1rem;
+  font: inherit;
+  font-weight: 700;
+  color: #fff;
+  background: #b71c1c;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.dev-tools-delete-btn:hover {
+  background: #8b0000;
 }
 
 .page-screen {
@@ -115,6 +208,12 @@ p {
   font-size: 0.9375rem;
 }
 
+.guest-route-role-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  opacity: 0.8;
+}
+
 .guest-question-text {
   margin: 0.75rem 0 1rem;
   font-size: 1.125rem;
@@ -177,6 +276,13 @@ p {
   font-weight: 700;
 }
 
+.admin-question-progress {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 .admin-game-dl {
   margin: 0;
 }
@@ -212,6 +318,77 @@ p {
 .admin-game-progress {
   margin: 0.75rem 0 0;
   font-size: 0.9375rem;
+}
+
+.admin-confirmand-panel {
+  margin: 1.25rem 0 0;
+  padding: 1rem 1rem 0.85rem;
+  background: #fff;
+  border: 1px solid #d9cfc2;
+  border-radius: 8px;
+}
+
+.admin-confirmand-inner {
+  margin: 0;
+}
+
+.admin-confirmand-heading {
+  margin: 0 0 0.65rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.admin-confirmand-row {
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+}
+
+.admin-confirmand-row:first-of-type {
+  margin-top: 0;
+}
+
+.admin-confirmand-muted {
+  opacity: 0.8;
+}
+
+.admin-confirmand-yes {
+  color: #1b5e20;
+  font-weight: 600;
+}
+
+.admin-confirmand-no {
+  color: #b71c1c;
+  font-weight: 600;
+}
+
+.admin-confirmand-answered {
+  color: #1b5e20;
+  font-weight: 600;
+}
+
+.admin-confirmand-waiting {
+  color: #e65100;
+  font-weight: 600;
+}
+
+.admin-role-pill {
+  flex: 0 0 auto;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-radius: 4px;
+}
+
+.admin-role-guest {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.admin-role-confirmand {
+  background: #f3e5f5;
+  color: #6a1b9a;
 }
 
 .admin-banner {
@@ -280,10 +457,183 @@ p {
   background: #2a231c;
 }
 
+.admin-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.admin-btn:disabled:hover {
+  background: #3d3429;
+}
+
+.admin-btn-secondary.admin-btn:disabled:hover {
+  background: #8c7f6d;
+}
+
 .admin-btn-secondary {
   background: #8c7f6d;
 }
 
 .admin-btn-secondary:hover {
   background: #74685a;
+}
+
+.admin-game-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.admin-game-actions-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+}
+
+.admin-game-actions-aside {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.admin-reset-dialog {
+  border: none;
+  padding: 0;
+  border-radius: 10px;
+  max-width: 24rem;
+  width: calc(100vw - 2rem);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+}
+
+.admin-reset-dialog::backdrop {
+  background: rgba(26, 35, 50, 0.45);
+}
+
+.admin-reset-dialog-panel {
+  padding: 1.25rem 1.35rem;
+  background: #faf7f2;
+  border-radius: 10px;
+  border: 1px solid #d9cfc2;
+}
+
+.admin-reset-dialog-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.admin-reset-dialog-lede {
+  margin: 0 0 1rem;
+  font-size: 0.9375rem;
+  opacity: 0.92;
+}
+
+.admin-reset-dialog-label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.admin-reset-dialog-input {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  font: inherit;
+  border: 1px solid #aa9b88;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.admin-reset-dialog-error {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+  color: #7c2d12;
+}
+
+.admin-reset-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.25rem;
+}
+
+.guest-phase-closed {
+  margin: 0.5rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #5c3d1e;
+}
+
+.guest-countdown {
+  margin: 0.5rem 0 0;
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.guest-time-up {
+  margin: 0.5rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #9a3412;
+}
+
+.screen-empty .screen-headline {
+  font-size: clamp(1.5rem, 4vw, 2.25rem);
+  margin-bottom: 0.75rem;
+}
+
+.screen-empty .screen-progress {
+  margin-bottom: 0.5rem;
+}
+
+.screen-lede {
+  font-size: 1.05rem;
+  opacity: 0.85;
+}
+
+.screen-layout {
+  text-align: center;
+}
+
+.screen-progress {
+  font-size: clamp(1.1rem, 3vw, 1.75rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 1rem;
+}
+
+.screen-label {
+  display: block;
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.75;
+  margin-bottom: 0.35rem;
+}
+
+.screen-phase {
+  font-size: clamp(1rem, 2.5vw, 1.25rem);
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+}
+
+.screen-question {
+  font-size: clamp(1.5rem, 5vw, 2.75rem);
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0 0 1.5rem;
+}
+
+.screen-muted {
+  opacity: 0.65;
+}
+
+.screen-count {
+  font-size: clamp(1.1rem, 3vw, 1.6rem);
+  font-weight: 600;
+  opacity: 0.95;
 }

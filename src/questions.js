@@ -16,3 +16,5 @@ export const QUESTIONS = [
     options: ['Speed of sound in air', 'Speed of light in vacuum', '100 km/h', 'Mach 2'],
   },
 ]
+
+export const QUESTION_COUNT = QUESTIONS.length

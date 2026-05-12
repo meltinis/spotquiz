@@ -10,21 +10,35 @@ import { db } from './firebase.js'
 
 import {
 
-  registerGuestParticipant,
+  registerParticipantForRoute,
 
   subscribeParticipant,
 
-  updateGuestLastSeen,
+  syncParticipantRoleAndPresence,
 
 } from './participants.js'
 
 import {
 
+  getCurrentRoleFromRoute,
+
+  getRoleFromPathname,
+
+  PARTICIPANT_ROLE_CONFIRMAND,
+
+  SPOTQUIZ_DEBUG_ROLE,
+
+} from './routeRole.js'
+
+import {
+
   generateUserId,
 
-  getGuestSession,
+  getParticipantSession,
 
-  saveGuestSession,
+  saveParticipantSession,
+
+  cacheParticipantRoleFromRoute,
 
 } from './guestStorage.js'
 
@@ -42,15 +56,55 @@ import {
 
 
 
+const GUEST_VIEW_CONFIG = {
+
+  getSession: getParticipantSession,
+
+  saveSession: saveParticipantSession,
+
+  registerParticipant: registerParticipantForRoute,
+
+  joinTitle: 'Join quiz',
+
+  joinLede: 'Pick the name everyone will see.',
+
+  namePlaceholder: 'e.g. Alex',
+
+}
+
+
+
+const CONFIRMAND_VIEW_CONFIG = {
+
+  getSession: getParticipantSession,
+
+  saveSession: saveParticipantSession,
+
+  registerParticipant: registerParticipantForRoute,
+
+  joinTitle: 'Confirmand',
+
+  joinLede: 'Enter the name organizers will see.',
+
+  namePlaceholder: 'Your name',
+
+}
+
+
+
 let guestRealtimeUnsubscribe = null
 
 let guestGameUnsubscribe = null
 
 let guestAnswerUnsubscribe = null
 
+let guestCountdownIntervalId = null
+
 
 
 export function disposeGuestSubscriptions() {
+
+  clearGuestCountdown()
 
   if (guestRealtimeUnsubscribe) {
 
@@ -77,6 +131,20 @@ export function disposeGuestSubscriptions() {
   }
 
   clearGuestOptionDelegation()
+
+}
+
+
+
+function clearGuestCountdown() {
+
+  if (guestCountdownIntervalId != null) {
+
+    clearInterval(guestCountdownIntervalId)
+
+    guestCountdownIntervalId = null
+
+  }
 
 }
 
@@ -122,17 +190,57 @@ function escapeHtml(text) {
 
 
 
-export function renderGuest(container) {
+function routeRoleLabelHtml() {
+
+  const label =
+
+    getCurrentRoleFromRoute() === PARTICIPANT_ROLE_CONFIRMAND
+
+      ? 'Confirmand'
+
+      : 'Guest'
+
+  return `<p class="guest-route-role-hint">Playing as <strong>${escapeHtml(label)}</strong></p>`
+
+}
+
+
+
+function remainingMsFromClosesAt(closesAt) {
+
+  if (typeof closesAt !== 'number') return 0
+
+  return Math.max(0, closesAt - Date.now())
+
+}
+
+
+
+function formatCountdown(remainingMs) {
+
+  const s = Math.max(0, Math.ceil(remainingMs / 1000))
+
+  const m = Math.floor(s / 60)
+
+  const sec = s % 60
+
+  return `${m}:${String(sec).padStart(2, '0')}`
+
+}
+
+
+
+function renderParticipantView(container, cfg) {
 
   disposeGuestSubscriptions()
 
 
 
-  const session = getGuestSession()
+  const session = cfg.getSession()
 
   if (!session) {
 
-    renderJoinForm(container)
+    renderJoinForm(container, cfg)
 
     return
 
@@ -140,19 +248,35 @@ export function renderGuest(container) {
 
 
 
-  mountGuestWaiting(container, session.userId)
+  mountParticipantWaiting(container, session.userId, cfg)
 
 }
 
 
 
-function renderJoinForm(container) {
+export function renderGuest(container) {
+
+  renderParticipantView(container, GUEST_VIEW_CONFIG)
+
+}
+
+
+
+export function renderConfirmand(container) {
+
+  renderParticipantView(container, CONFIRMAND_VIEW_CONFIG)
+
+}
+
+
+
+function renderJoinForm(container, cfg) {
 
   container.innerHTML = `
 
-    <h1>Join quiz</h1>
+    <h1>${escapeHtml(cfg.joinTitle)}</h1>
 
-    <p class="guest-lede">Pick the name everyone will see.</p>
+    <p class="guest-lede">${escapeHtml(cfg.joinLede)}</p>
 
     <form class="guest-form" id="guest-join-form">
 
@@ -174,7 +298,7 @@ function renderJoinForm(container) {
 
         required
 
-        placeholder="e.g. Alex"
+        placeholder="${escapeHtml(cfg.namePlaceholder)}"
 
       />
 
@@ -218,11 +342,11 @@ function renderJoinForm(container) {
 
     try {
 
-      await registerGuestParticipant(userId, displayName)
+      await cfg.registerParticipant(userId, displayName)
 
-      saveGuestSession(userId, displayName.trim())
+      cfg.saveSession(userId, displayName.trim())
 
-      renderGuest(container)
+      renderParticipantView(container, cfg)
 
     } catch (err) {
 
@@ -256,6 +380,30 @@ function drawWaiting(container, participantLike) {
 
     <p class="guest-waiting-secondary">Signed in as <strong>${escapeHtml(shown)}</strong></p>
 
+    ${routeRoleLabelHtml()}
+
+  `
+
+}
+
+
+
+function drawQuestionClosed(container, participantLike, question) {
+
+  const shown = formatParticipantDisplay(participantLike)
+
+  container.innerHTML = `
+
+    <h1>You're in</h1>
+
+    <p class="guest-question-text">${escapeHtml(question.text)}</p>
+
+    <p class="guest-phase-closed">Question closed</p>
+
+    <p class="guest-waiting-secondary">Signed in as <strong>${escapeHtml(shown)}</strong></p>
+
+    ${routeRoleLabelHtml()}
+
   `
 
 }
@@ -270,13 +418,29 @@ function drawQuestionOpen(
 
   question,
 
-  { existingAnswer, submitting },
+  { existingAnswer, submitting, remainingMs },
 
 ) {
 
   const shown = formatParticipantDisplay(participantLike)
 
-  const locked = !!existingAnswer || submitting
+  const timeUp = !existingAnswer && remainingMs <= 0
+
+  const locked =
+
+    !!existingAnswer || submitting || remainingMs <= 0
+
+  const countdownLine =
+
+    !existingAnswer && remainingMs > 0
+
+      ? `<p class="guest-countdown">Time left: ${escapeHtml(formatCountdown(remainingMs))}</p>`
+
+      : ''
+
+  const timeUpLine =
+
+    timeUp ? '<p class="guest-time-up">Time is up</p>' : ''
 
   const buttons = question.options
 
@@ -322,9 +486,15 @@ function drawQuestionOpen(
 
     ${registeredBlock}
 
+    ${countdownLine}
+
+    ${timeUpLine}
+
     <div class="guest-options">${buttons}</div>
 
     <p class="guest-waiting-secondary">Signed in as <strong>${escapeHtml(shown)}</strong></p>
+
+    ${routeRoleLabelHtml()}
 
   `
 
@@ -332,15 +502,33 @@ function drawQuestionOpen(
 
 
 
-function mountGuestWaiting(container, userId) {
+function mountParticipantWaiting(container, userId, cfg) {
 
-  updateGuestLastSeen(userId).catch(console.error)
+  syncParticipantRoleAndPresence(userId).catch(console.error)
+
+  cacheParticipantRoleFromRoute()
+
+
+
+  if (SPOTQUIZ_DEBUG_ROLE && typeof window !== 'undefined') {
+
+    const pathname = window.location.pathname
+
+    console.log('[SpotQuiz role] mountParticipantWaiting', {
+
+      pathname,
+
+      resolvedRole: getRoleFromPathname(pathname),
+
+    })
+
+  }
 
 
 
   if (!db) {
 
-    const s = getGuestSession()
+    const s = cfg.getSession()
 
     drawWaiting(container, { displayName: s?.displayName ?? '' })
 
@@ -354,11 +542,14 @@ function mountGuestWaiting(container, userId) {
 
 
 
-  const sess = getGuestSession()
+  const sess = cfg.getSession()
 
   let lastParticipant = sess ? { displayName: sess.displayName } : null
 
   let lastGame = null
+
+  /** Clears local answer UI when `questionIndex` advances to a new question. */
+  let prevOpenQuestionIndex = null
 
   let lastMyAnswer = null
 
@@ -376,19 +567,35 @@ function mountGuestWaiting(container, userId) {
 
     }
 
-    lastMyAnswer = null
-
-    answerSubmitting = false
-
-
-
     const phase = lastGame?.phase
 
     const idx = lastGame?.questionIndex
 
+
+
+    if (typeof idx === 'number' && phase === 'question_open') {
+
+      if (prevOpenQuestionIndex !== idx) {
+
+        prevOpenQuestionIndex = idx
+
+        lastMyAnswer = null
+
+        answerSubmitting = false
+
+      }
+
+    } else {
+
+      prevOpenQuestionIndex = null
+
+    }
+
+
+
     if (typeof idx !== 'number' || phase !== 'question_open') {
 
-      applyGuestView()
+      applyParticipantView()
 
       return
 
@@ -402,43 +609,73 @@ function mountGuestWaiting(container, userId) {
 
       if (data) answerSubmitting = false
 
-      applyGuestView()
+      applyParticipantView()
 
     })
 
 
 
-    applyGuestView()
+    applyParticipantView()
 
   }
 
 
 
-  function applyGuestView() {
-
-    const participantLike = lastParticipant ?? {}
+  function syncCountdownTimer() {
 
     const phase = lastGame?.phase
 
     const idx = lastGame?.questionIndex
 
-    const q =
+    const openOk =
 
-      typeof idx === 'number' && phase === 'question_open' ? QUESTIONS[idx] : null
+      phase === 'question_open' &&
 
-    if (q) {
+      typeof idx === 'number' &&
 
-      drawQuestionOpen(container, participantLike, q, {
+      QUESTIONS[idx]
 
-        existingAnswer: lastMyAnswer,
 
-        submitting: answerSubmitting,
 
-      })
+    if (!openOk) {
 
-    } else {
+      clearGuestCountdown()
 
-      drawWaiting(container, participantLike)
+      return
+
+    }
+
+
+
+    if (lastMyAnswer) {
+
+      clearGuestCountdown()
+
+      return
+
+    }
+
+
+
+    const remains = remainingMsFromClosesAt(lastGame?.closesAt)
+
+    if (remains <= 0) {
+
+      clearGuestCountdown()
+
+      return
+
+    }
+
+
+
+    if (guestCountdownIntervalId == null) {
+
+      guestCountdownIntervalId = window.setInterval(() => {
+
+        applyParticipantView()
+
+      }, 1000)
 
     }
 
@@ -446,7 +683,103 @@ function mountGuestWaiting(container, userId) {
 
 
 
-  async function onGuestOptionClick(e) {
+  function applyParticipantView() {
+
+    const participantLike = lastParticipant ?? {}
+
+    const phase = lastGame?.phase
+
+    const idx = lastGame?.questionIndex
+
+
+
+    if (phase === 'waiting') {
+
+      drawWaiting(container, participantLike)
+
+      syncCountdownTimer()
+
+      return
+
+    }
+
+
+
+    if (
+
+      typeof idx === 'number' &&
+
+      idx >= 0 &&
+
+      idx < QUESTIONS.length &&
+
+      phase === 'question_closed'
+
+    ) {
+
+      const closedQ = QUESTIONS[idx]
+
+      if (closedQ) {
+
+        drawQuestionClosed(container, participantLike, closedQ)
+
+        syncCountdownTimer()
+
+        return
+
+      }
+
+    }
+
+
+
+    if (
+
+      typeof idx === 'number' &&
+
+      idx >= 0 &&
+
+      idx < QUESTIONS.length &&
+
+      phase === 'question_open'
+
+    ) {
+
+      const openQ = QUESTIONS[idx]
+
+      if (openQ) {
+
+        const remainingMs = remainingMsFromClosesAt(lastGame?.closesAt)
+
+        drawQuestionOpen(container, participantLike, openQ, {
+
+          existingAnswer: lastMyAnswer,
+
+          submitting: answerSubmitting,
+
+          remainingMs,
+
+        })
+
+        syncCountdownTimer()
+
+        return
+
+      }
+
+    }
+
+
+
+    drawWaiting(container, participantLike)
+
+    syncCountdownTimer()
+
+  }
+
+
+
+  async function onParticipantOptionClick(e) {
 
     const btn = e.target.closest('.guest-option-btn')
 
@@ -474,6 +807,10 @@ function mountGuestWaiting(container, userId) {
 
 
 
+    if (remainingMsFromClosesAt(lastGame?.closesAt) <= 0) return
+
+
+
     const q = QUESTIONS[qIdx]
 
     if (!q) return
@@ -488,15 +825,30 @@ function mountGuestWaiting(container, userId) {
 
     answerSubmitting = true
 
-    applyGuestView()
+    applyParticipantView()
 
 
 
     try {
 
+      const pathname =
+        typeof window !== 'undefined' ? window.location.pathname : ''
+
+      const role = getRoleFromPathname(pathname)
+
+      if (SPOTQUIZ_DEBUG_ROLE) {
+        console.log('[SpotQuiz role] saveNewAnswer', {
+          pathname,
+          resolvedRole: role,
+          savedParticipantRole: lastParticipant?.role ?? null,
+        })
+      }
+
       await saveNewAnswer(qIdx, userId, {
 
         userId,
+
+        role,
 
         displayName: formatParticipantDisplay(lastParticipant ?? {}),
 
@@ -512,7 +864,7 @@ function mountGuestWaiting(container, userId) {
 
       answerSubmitting = false
 
-      applyGuestView()
+      applyParticipantView()
 
     }
 
@@ -522,9 +874,9 @@ function mountGuestWaiting(container, userId) {
 
   guestOptionDelegationTarget = container
 
-  guestOptionDelegationHandler = onGuestOptionClick
+  guestOptionDelegationHandler = onParticipantOptionClick
 
-  container.addEventListener('click', onGuestOptionClick)
+  container.addEventListener('click', onParticipantOptionClick)
 
 
 
@@ -532,11 +884,11 @@ function mountGuestWaiting(container, userId) {
 
     const raw = rawParticipantDisplay(data ?? {})
 
-    saveGuestSession(userId, raw)
+    cfg.saveSession(userId, raw)
 
     lastParticipant = data ?? {}
 
-    applyGuestView()
+    applyParticipantView()
 
   })
 

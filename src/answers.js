@@ -1,4 +1,4 @@
-import { ref, get, set, onValue } from 'firebase/database'
+import { ref, set, onValue } from 'firebase/database'
 import { db } from './firebase.js'
 
 function requireDb() {
@@ -34,15 +34,11 @@ export function subscribeAnswersForQuestion(questionIndex, onData) {
 }
 
 /**
- * Writes `answers/{questionIndex}/{userId}`. Fails if a record already exists.
+ * Writes `answers/{questionIndex}/{userId}` in one request (no prior read).
+ * Duplicate submits are avoided on the guest via local state + listener.
  * @param {Record<string, unknown>} payload — e.g. `{ userId, displayName, answer, submittedAt }`
  */
 export async function saveNewAnswer(questionIndex, userId, payload) {
   requireDb()
-  const r = ref(db, `answers/${questionIndex}/${userId}`)
-  const snap = await get(r)
-  if (snap.exists()) {
-    throw new Error('Already answered')
-  }
-  await set(r, payload)
+  await set(ref(db, `answers/${questionIndex}/${userId}`), payload)
 }

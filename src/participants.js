@@ -1,5 +1,6 @@
-import { ref, set, update, onValue } from 'firebase/database'
+import { ref, set, update, get, onValue } from 'firebase/database'
 import { db } from './firebase.js'
+import { getRoleFromPathname, SPOTQUIZ_DEBUG_ROLE } from './routeRole.js'
 
 function requireDb() {
   if (!db) {
@@ -9,25 +10,73 @@ function requireDb() {
   }
 }
 
-/** Full write for a new guest (join form). */
-export async function registerGuestParticipant(userId, displayName) {
+/** Create or update participant; `role` is always from `getRoleFromPathname` (current URL). */
+export async function registerParticipantForRoute(userId, displayName) {
   requireDb()
+  const pathname =
+    typeof window !== 'undefined' ? window.location.pathname : ''
+  const role = getRoleFromPathname(pathname)
   const now = Date.now()
   const trimmed = displayName.trim()
-  await set(ref(db, `participants/${userId}`), {
-    displayName: trimmed,
-    role: 'guest',
-    joinedAt: now,
-    lastSeenAt: now,
-  })
+  const r = ref(db, `participants/${userId}`)
+  const snap = await get(r)
+  if (snap.exists()) {
+    await update(r, {
+      displayName: trimmed,
+      role,
+      lastSeenAt: now,
+    })
+  } else {
+    await set(r, {
+      displayName: trimmed,
+      role,
+      joinedAt: now,
+      lastSeenAt: now,
+    })
+  }
+  if (SPOTQUIZ_DEBUG_ROLE) {
+    const after = await get(r)
+    console.log('[SpotQuiz role] registerParticipantForRoute saved', {
+      pathname,
+      resolvedRole: role,
+      savedParticipantRole: after.exists() ? after.val()?.role : null,
+    })
+  }
 }
 
-/** Merge `lastSeenAt` when the guest already has a local session. */
-export async function updateGuestLastSeen(userId) {
+export async function registerGuestParticipant(userId, displayName) {
+  return registerParticipantForRoute(userId, displayName)
+}
+
+export async function registerConfirmandParticipant(userId, displayName) {
+  return registerParticipantForRoute(userId, displayName)
+}
+
+/**
+ * On `/` or `/confirmand` load: set `participants/{userId}/role` to
+ * `getCurrentRoleFromRoute()` and refresh `lastSeenAt` (overwrites saved role if different).
+ */
+export async function syncParticipantRoleAndPresence(userId) {
   requireDb()
-  await update(ref(db, `participants/${userId}`), {
-    lastSeenAt: Date.now(),
+  const pathname =
+    typeof window !== 'undefined' ? window.location.pathname : ''
+  const role = getRoleFromPathname(pathname)
+  const now = Date.now()
+  const r = ref(db, `participants/${userId}`)
+  const snap = await get(r)
+  if (!snap.exists()) return
+  await update(r, {
+    role,
+    lastSeenAt: now,
   })
+  if (SPOTQUIZ_DEBUG_ROLE) {
+    const after = await get(r)
+    console.log('[SpotQuiz role] syncParticipantRoleAndPresence saved', {
+      pathname,
+      resolvedRole: role,
+      savedParticipantRole: after.exists() ? after.val()?.role : null,
+    })
+  }
 }
 
 /**
