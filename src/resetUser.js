@@ -16,7 +16,7 @@ export function renderResetUser(container) {
         <h1>${escapeHtml(t('resetUser.title'))}</h1>
         <p class="reset-user-success">${escapeHtml(t('resetUser.success'))}</p>
         <p class="reset-user-next">
-          <a href="/">${escapeHtml(t('resetUser.backHome'))}</a>
+          <a href="#/">${escapeHtml(t('resetUser.backHome'))}</a>
         </p>
       `
       return

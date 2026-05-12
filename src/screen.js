@@ -29,7 +29,7 @@ function clearScreenTimerTick() {
   }
 }
 
-/** Call when leaving /screen so listeners stop. */
+/** Call when leaving #/screen so listeners stop. */
 export function disposeScreenSubscriptions() {
   clearScreenTimerTick()
   if (screenGameUnsubscribe) {

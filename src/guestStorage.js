@@ -35,7 +35,7 @@ function readStoredDisplayName() {
 }
 
 /**
- * One participant identity for both `/` and `/confirmand` (same userId).
+ * One participant identity for both `#/` and `#/confirmand` (same userId).
  * Migrates old confirmand-only keys into unified storage once.
  */
 export function getParticipantSession() {

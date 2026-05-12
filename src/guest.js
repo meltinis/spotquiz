@@ -24,7 +24,7 @@ import {
 
   getCurrentRoleFromRoute,
 
-  getRoleFromPathname,
+  getCurrentRoute,
 
   PARTICIPANT_ROLE_CONFIRMAND,
 
@@ -1188,13 +1188,13 @@ function mountParticipantWaiting(container, userId, cfg) {
 
   if (SPOTQUIZ_DEBUG_ROLE && typeof window !== 'undefined') {
 
-    const pathname = window.location.pathname
-
     console.log('[SpotQuiz role] mountParticipantWaiting', {
 
-      pathname,
+      hash: window.location.hash,
 
-      resolvedRole: getRoleFromPathname(pathname),
+      route: getCurrentRoute(),
+
+      resolvedRole: getCurrentRoleFromRoute(),
 
     })
 
@@ -1723,14 +1723,11 @@ function mountParticipantWaiting(container, userId, cfg) {
 
     try {
 
-      const pathname =
-        typeof window !== 'undefined' ? window.location.pathname : ''
-
-      const role = getRoleFromPathname(pathname)
+      const role = getCurrentRoleFromRoute()
 
       if (SPOTQUIZ_DEBUG_ROLE) {
         console.log('[SpotQuiz role] saveNewAnswer', {
-          pathname,
+          hash: typeof window !== 'undefined' ? window.location.hash : '',
           resolvedRole: role,
           savedParticipantRole: lastParticipant?.role ?? null,
         })

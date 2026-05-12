@@ -1,7 +1,7 @@
 import { ref, set, update, get, onValue } from 'firebase/database'
 import { db } from './firebase.js'
 import { t } from './i18n.js'
-import { getRoleFromPathname, SPOTQUIZ_DEBUG_ROLE } from './routeRole.js'
+import { getCurrentRoleFromRoute, SPOTQUIZ_DEBUG_ROLE } from './routeRole.js'
 
 function requireDb() {
   if (!db) {
@@ -9,12 +9,11 @@ function requireDb() {
   }
 }
 
-/** Create or update participant; `role` is always from `getRoleFromPathname` (current URL). */
+/** Create or update participant; `role` is always from the current hash route. */
 export async function registerParticipantForRoute(userId, displayName) {
   requireDb()
-  const pathname =
-    typeof window !== 'undefined' ? window.location.pathname : ''
-  const role = getRoleFromPathname(pathname)
+  const hash = typeof window !== 'undefined' ? window.location.hash : ''
+  const role = getCurrentRoleFromRoute()
   const now = Date.now()
   const trimmed = displayName.trim()
   const r = ref(db, `participants/${userId}`)
@@ -36,7 +35,7 @@ export async function registerParticipantForRoute(userId, displayName) {
   if (SPOTQUIZ_DEBUG_ROLE) {
     const after = await get(r)
     console.log('[SpotQuiz role] registerParticipantForRoute saved', {
-      pathname,
+      hash,
       resolvedRole: role,
       savedParticipantRole: after.exists() ? after.val()?.role : null,
     })
@@ -52,14 +51,13 @@ export async function registerConfirmandParticipant(userId, displayName) {
 }
 
 /**
- * On `/` or `/confirmand` load: set `participants/{userId}/role` to
+ * On guest or confirmand hash routes: set `participants/{userId}/role` to
  * `getCurrentRoleFromRoute()` and refresh `lastSeenAt` (overwrites saved role if different).
  */
 export async function syncParticipantRoleAndPresence(userId) {
   requireDb()
-  const pathname =
-    typeof window !== 'undefined' ? window.location.pathname : ''
-  const role = getRoleFromPathname(pathname)
+  const hash = typeof window !== 'undefined' ? window.location.hash : ''
+  const role = getCurrentRoleFromRoute()
   const now = Date.now()
   const r = ref(db, `participants/${userId}`)
   const snap = await get(r)
@@ -71,7 +69,7 @@ export async function syncParticipantRoleAndPresence(userId) {
   if (SPOTQUIZ_DEBUG_ROLE) {
     const after = await get(r)
     console.log('[SpotQuiz role] syncParticipantRoleAndPresence saved', {
-      pathname,
+      hash,
       resolvedRole: role,
       savedParticipantRole: after.exists() ? after.val()?.role : null,
     })

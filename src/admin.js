@@ -35,7 +35,7 @@ function clearAdminTimerTick() {
   }
 }
 
-/** Call when leaving /admin so the realtime listener stops. */
+/** Call when leaving #/admin so the realtime listener stops. */
 export function disposeAdminSubscriptions() {
   clearAdminTimerTick()
   adminIntroSequenceCancelled = true
