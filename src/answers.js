@@ -1,11 +1,10 @@
 import { ref, set, onValue } from 'firebase/database'
 import { db } from './firebase.js'
+import { t } from './i18n.js'
 
 function requireDb() {
   if (!db) {
-    throw new Error(
-      'Firebase Realtime Database URL missing. Add VITE_FIREBASE_DATABASE_URL to your .env file.',
-    )
+    throw new Error(t('errors.firebaseUrlMissing'))
   }
 }
 
@@ -18,6 +17,18 @@ export function subscribeUserAnswer(questionIndex, userId, onData) {
   const r = ref(db, `answers/${questionIndex}/${userId}`)
   return onValue(r, (snap) => {
     onData(snap.exists() ? snap.val() : null)
+  })
+}
+
+/** Full tree `answers/{questionIndex}/{userId}` for stats (small quiz). */
+export function subscribeAllAnswers(onData) {
+  if (!db) {
+    onData(null)
+    return () => {}
+  }
+  const r = ref(db, 'answers')
+  return onValue(r, (snap) => {
+    onData(snap.exists() ? snap.val() || {} : {})
   })
 }
 

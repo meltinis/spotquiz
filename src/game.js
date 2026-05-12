@@ -1,17 +1,20 @@
-import { ref, set, update, get, onValue } from 'firebase/database'
+import { ref, set, update, get, onValue, runTransaction } from 'firebase/database'
 import { db } from './firebase.js'
+import { t } from './i18n.js'
 import { QUESTIONS } from './questions.js'
+import { PARTICIPANT_ROLE_CONFIRMAND } from './routeRole.js'
 
 const MAX_QUESTION_INDEX = QUESTIONS.length - 1
 
 /** Time window for answering once a question is opened (ms). */
-const QUESTION_OPEN_DURATION_MS = 30_000
+const QUESTION_OPEN_DURATION_MS = 10_000
+
+const BASE_CORRECT_POINTS = 1000
+const MAX_SPEED_BONUS_POINTS = 500
 
 function requireDb() {
   if (!db) {
-    throw new Error(
-      'Firebase Realtime Database URL missing. Add VITE_FIREBASE_DATABASE_URL to your .env file.',
-    )
+    throw new Error(t('errors.firebaseUrlMissing'))
   }
 }
 
@@ -39,10 +42,140 @@ export async function startQuestion() {
   })
 }
 
-/** Stops accepting answers for the current question (admin). */
+function scoreForUserId(scoresRoot, userId) {
+  const v = scoresRoot?.[userId]
+  return typeof v === 'number' && Number.isFinite(v) ? v : 0
+}
+
+/** Rounded speed bonus in [0, 500] from game window and answer time. */
+function speedBonusPoints(submittedAt, startedAt, closesAt) {
+  if (typeof submittedAt !== 'number' || !Number.isFinite(submittedAt)) return 0
+  if (typeof startedAt !== 'number' || !Number.isFinite(startedAt)) return 0
+  if (typeof closesAt !== 'number' || !Number.isFinite(closesAt)) return 0
+  const duration = closesAt - startedAt
+  if (!(duration > 0)) return 0
+  const raw = MAX_SPEED_BONUS_POINTS * ((closesAt - submittedAt) / duration)
+  const rounded = Math.round(raw)
+  return Math.max(0, Math.min(MAX_SPEED_BONUS_POINTS, rounded))
+}
+
+/**
+ * Writes `results/{questionIndex}` (including `scores/{userId}` breakdown) and adds
+ * round points to `scores/{userId}`. Skips if already scored. Does nothing if the
+ * confirmand did not submit an answer for this question.
+ */
+async function scoreQuestionAtIndex(questionIndex) {
+  requireDb()
+  if (
+    typeof questionIndex !== 'number' ||
+    questionIndex < 0 ||
+    questionIndex > MAX_QUESTION_INDEX
+  ) {
+    return
+  }
+
+  const gameSnap = await get(ref(db, 'game'))
+  const gameVal = gameSnap.exists() ? gameSnap.val() : {}
+  const startedAt =
+    typeof gameVal.startedAt === 'number' ? gameVal.startedAt : null
+  const closesAt =
+    typeof gameVal.closesAt === 'number' ? gameVal.closesAt : null
+
+  const answersSnap = await get(ref(db, `answers/${questionIndex}`))
+  const answersMap = answersSnap.exists() ? answersSnap.val() || {} : {}
+  let correctAnswer = null
+  for (const ans of Object.values(answersMap)) {
+    if (ans && ans.role === PARTICIPANT_ROLE_CONFIRMAND && typeof ans.answer === 'string') {
+      correctAnswer = ans.answer
+      break
+    }
+  }
+  if (correctAnswer == null) return
+
+  const guestScores = {}
+  const cumulativeDeltas = {}
+  for (const [userId, ans] of Object.entries(answersMap)) {
+    if (!ans || ans.role === PARTICIPANT_ROLE_CONFIRMAND) continue
+    const answer = typeof ans.answer === 'string' ? ans.answer : ''
+    const submittedAt =
+      typeof ans.submittedAt === 'number' ? ans.submittedAt : null
+    const displayName =
+      typeof ans.displayName === 'string' ? ans.displayName.trim() : ''
+    const correct = answer === correctAnswer
+    let basePoints = 0
+    let speedBonus = 0
+    let totalPoints = 0
+    if (correct) {
+      basePoints = BASE_CORRECT_POINTS
+      speedBonus = speedBonusPoints(submittedAt, startedAt, closesAt)
+      totalPoints = basePoints + speedBonus
+      cumulativeDeltas[userId] = totalPoints
+    }
+    guestScores[userId] = {
+      displayName,
+      correct,
+      basePoints,
+      speedBonus,
+      totalPoints,
+      submittedAt,
+    }
+  }
+
+  const payload = {
+    scored: true,
+    scoredAt: Date.now(),
+    correctAnswer,
+    startedAt,
+    closesAt,
+    scores: guestScores,
+  }
+
+  const txResult = await runTransaction(
+    ref(db, `results/${questionIndex}`),
+    (current) => {
+      if (current && current.scored === true) return undefined
+      return payload
+    },
+  )
+  if (!txResult.committed) return
+
+  if (Object.keys(cumulativeDeltas).length === 0) return
+
+  const scoresSnap = await get(ref(db, 'scores'))
+  const scoresRoot = scoresSnap.exists() ? scoresSnap.val() || {} : {}
+  const scoreUpdates = {}
+  for (const [userId, add] of Object.entries(cumulativeDeltas)) {
+    const next = scoreForUserId(scoresRoot, userId) + add
+    scoreUpdates[`scores/${userId}`] = next
+  }
+  await update(ref(db), scoreUpdates)
+}
+
+/** Sets phase to `question_closed` when open, then applies scoring rules once. */
 export async function closeQuestion() {
   requireDb()
-  await update(ref(db, 'game'), { phase: 'question_closed' })
+  const snap = await get(ref(db, 'game'))
+  if (!snap.exists()) return
+  const g = snap.val()
+  if (g.phase === 'waiting') return
+  const qIdx = g.questionIndex
+  if (typeof qIdx !== 'number') return
+  if (g.phase === 'question_open') {
+    await update(ref(db, 'game'), { phase: 'question_closed' })
+  }
+  await scoreQuestionAtIndex(qIdx)
+}
+
+/** When the open window has passed its `closesAt` time, close and score (idempotent). */
+export async function maybeAutoCloseExpiredQuestion() {
+  if (!db) return
+  const snap = await get(ref(db, 'game'))
+  if (!snap.exists()) return
+  const g = snap.val()
+  if (g.phase !== 'question_open') return
+  if (typeof g.closesAt !== 'number') return
+  if (Date.now() < g.closesAt) return
+  await closeQuestion()
 }
 
 /** Advances to the next question and opens the window (admin). */
@@ -50,13 +183,13 @@ export async function nextQuestion() {
   requireDb()
   const snap = await get(ref(db, 'game'))
   if (!snap.exists()) {
-    throw new Error('No game in progress.')
+    throw new Error(t('errors.noGameInProgress'))
   }
   const current = snap.val()
   const idx =
     typeof current.questionIndex === 'number' ? current.questionIndex : 0
   if (idx >= MAX_QUESTION_INDEX) {
-    throw new Error('Already on the last question.')
+    throw new Error(t('errors.alreadyLastQuestion'))
   }
   const now = Date.now()
   await update(ref(db, 'game'), {
@@ -67,7 +200,7 @@ export async function nextQuestion() {
   })
 }
 
-/** Clears answers & scores and returns the game to an idle state (participants unchanged). */
+/** Clears answers, results & scores and returns the game to an idle state (participants unchanged). */
 export async function resetGame() {
   requireDb()
   await Promise.all([
@@ -78,6 +211,7 @@ export async function resetGame() {
       closesAt: null,
     }),
     set(ref(db, 'answers'), null),
+    set(ref(db, 'results'), null),
     set(ref(db, 'scores'), null),
   ])
 }

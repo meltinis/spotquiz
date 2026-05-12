@@ -1,4 +1,11 @@
 import { clearLocalParticipantStorage } from './guestStorage.js'
+import { t } from './i18n.js'
+
+function escapeHtml(text) {
+  const div = document.createElement('div')
+  div.textContent = text
+  return div.innerHTML
+}
 
 export function renderResetUser(container) {
   let done = false
@@ -6,25 +13,23 @@ export function renderResetUser(container) {
   function draw() {
     if (done) {
       container.innerHTML = `
-        <h1>Reset this user</h1>
-        <p class="reset-user-success">This user has been reset</p>
+        <h1>${escapeHtml(t('resetUser.title'))}</h1>
+        <p class="reset-user-success">${escapeHtml(t('resetUser.success'))}</p>
         <p class="reset-user-next">
-          <a href="/">Back to quiz home</a>
+          <a href="/">${escapeHtml(t('resetUser.backHome'))}</a>
         </p>
       `
       return
     }
 
     container.innerHTML = `
-      <h1>Reset this user</h1>
+      <h1>${escapeHtml(t('resetUser.title'))}</h1>
       <p class="reset-user-lede">
-        This only clears saved data in <strong>this browser on this device</strong>
-        (your user id, display name, and cached role). Nothing is deleted from the
-        server and other people are not affected.
+        ${t('resetUser.lede')}
       </p>
       <p>
         <button type="button" class="reset-user-btn" id="reset-user-submit">
-          Reset this user
+          ${escapeHtml(t('resetUser.submit'))}
         </button>
       </p>
     `

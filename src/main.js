@@ -13,8 +13,11 @@ import {
   normalizedPathname,
   isConfirmandParticipantPath,
 } from './routeRole.js'
+import { t } from './i18n.js'
 
 const appEl = document.getElementById('app')
+
+document.title = t('common.documentTitle')
 
 function route() {
   disposeAdminSubscriptions()

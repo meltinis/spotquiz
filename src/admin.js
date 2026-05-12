@@ -1,10 +1,12 @@
 import { db } from './firebase.js'
+import { t } from './i18n.js'
 import {
   startQuestion,
   closeQuestion,
   nextQuestion,
   resetGame,
   subscribeGame,
+  maybeAutoCloseExpiredQuestion,
 } from './game.js'
 import { subscribeAnswersForQuestion } from './answers.js'
 import { QUESTIONS, QUESTION_COUNT } from './questions.js'
@@ -23,9 +25,18 @@ import {
 let participantUnsubscribe = null
 let gameUnsubscribe = null
 let answersUnsubscribe = null
+let adminTimerTickId = null
+
+function clearAdminTimerTick() {
+  if (adminTimerTickId != null) {
+    clearInterval(adminTimerTickId)
+    adminTimerTickId = null
+  }
+}
 
 /** Call when leaving /admin so the realtime listener stops. */
 export function disposeAdminSubscriptions() {
+  clearAdminTimerTick()
   if (participantUnsubscribe) {
     participantUnsubscribe()
     participantUnsubscribe = null
@@ -77,6 +88,18 @@ function participantRoleLabel(p) {
     : PARTICIPANT_ROLE_GUEST
 }
 
+function participantRoleDisplay(p) {
+  return p && p.role === PARTICIPANT_ROLE_CONFIRMAND
+    ? t('roles.confirmand')
+    : t('roles.guest')
+}
+
+function phaseLabel(phase) {
+  const key = `gamePhase.${phase}`
+  const translated = t(key)
+  return translated !== key ? translated : String(phase ?? '—')
+}
+
 export function renderAdmin(container) {
   disposeAdminSubscriptions()
 
@@ -87,34 +110,34 @@ export function renderAdmin(container) {
   let bannerText = ''
 
   container.innerHTML = `
-    <h1>Admin</h1>
-    <p>Set up rounds, prompts, and see who confirmed in real time.</p>
+    <h1>${escapeHtml(t('admin.title'))}</h1>
+    <p>${escapeHtml(t('admin.lede'))}</p>
     <p class="admin-game-actions">
       <span class="admin-game-actions-main">
         <button type="button" class="admin-btn" id="admin-start-question">
-          Start Question
+          ${escapeHtml(t('admin.startQuestion'))}
         </button>
         <button type="button" class="admin-btn" id="admin-close-question">
-          Close Question
+          ${escapeHtml(t('admin.closeQuestion'))}
         </button>
         <button type="button" class="admin-btn" id="admin-next-question">
-          Next Question
+          ${escapeHtml(t('admin.nextQuestion'))}
         </button>
       </span>
       <span class="admin-game-actions-aside">
         <button type="button" class="admin-btn admin-btn-secondary" id="admin-reset-game">
-          Reset Game
+          ${escapeHtml(t('admin.resetGame'))}
         </button>
       </span>
     </p>
     <dialog class="admin-reset-dialog" id="admin-reset-dialog" aria-labelledby="admin-reset-dialog-title">
       <div class="admin-reset-dialog-panel">
-        <h3 class="admin-reset-dialog-title" id="admin-reset-dialog-title">Reset game</h3>
+        <h3 class="admin-reset-dialog-title" id="admin-reset-dialog-title">${escapeHtml(t('admin.resetDialogTitle'))}</h3>
         <p class="admin-reset-dialog-lede">
-          This clears all answers and scores. Participants stay.
+          ${t('admin.resetDialogLede')}
         </p>
         <label class="admin-reset-dialog-label" for="admin-reset-confirm-input">
-          Type <strong>RESET</strong> to confirm
+          ${t('admin.resetTypeReset')}
         </label>
         <input
           class="admin-reset-dialog-input"
@@ -127,9 +150,9 @@ export function renderAdmin(container) {
         <p class="admin-reset-dialog-error" id="admin-reset-dialog-error" hidden></p>
         <div class="admin-reset-dialog-actions">
           <button type="button" class="admin-btn admin-btn-secondary" id="admin-reset-cancel">
-            Cancel
+            ${escapeHtml(t('admin.resetCancel'))}
           </button>
-          <button type="button" class="admin-btn" id="admin-reset-confirm">Reset game</button>
+          <button type="button" class="admin-btn" id="admin-reset-confirm">${escapeHtml(t('admin.resetConfirm'))}</button>
         </div>
       </div>
     </dialog>
@@ -194,7 +217,7 @@ export function renderAdmin(container) {
     resetDialogError.hidden = true
     resetDialogError.textContent = ''
     if (resetConfirmInput.value !== 'RESET') {
-      resetDialogError.textContent = 'Type RESET exactly (all caps).'
+      resetDialogError.textContent = t('admin.resetTypeError')
       resetDialogError.hidden = false
       return
     }
@@ -208,7 +231,7 @@ export function renderAdmin(container) {
       resetDialogError.textContent =
         typeof err.message === 'string'
           ? err.message
-          : 'Could not reset game.'
+          : t('admin.resetFailed')
       resetDialogError.hidden = false
     }
   })
@@ -248,9 +271,9 @@ export function renderAdmin(container) {
     if (!gameState) {
       return `
         <div class="admin-game-panel">
-          <h2 class="admin-game-heading">Game status</h2>
-          <p class="admin-question-progress">Question ${questionProgressInnerHtml('waiting', 0)}</p>
-          <p class="admin-game-muted">No active game yet. Use <strong>Start Question</strong> when ready.</p>
+          <h2 class="admin-game-heading">${escapeHtml(t('admin.gameStatus'))}</h2>
+          <p class="admin-question-progress">${escapeHtml(t('common.questionNoun'))} ${questionProgressInnerHtml('waiting', 0)}</p>
+          <p class="admin-game-muted">${t('admin.noGameYet')}</p>
         </div>`
     }
 
@@ -281,33 +304,33 @@ export function renderAdmin(container) {
 
     return `
       <div class="admin-game-panel">
-        <h2 class="admin-game-heading">Game status</h2>
-        <p class="admin-question-progress">Question ${questionProgressInnerHtml(phase, idx)}</p>
+        <h2 class="admin-game-heading">${escapeHtml(t('admin.gameStatus'))}</h2>
+        <p class="admin-question-progress">${escapeHtml(t('common.questionNoun'))} ${questionProgressInnerHtml(phase, idx)}</p>
         <dl class="admin-game-dl">
           <div class="admin-game-dl-row">
-            <dt>Phase</dt>
-            <dd>${escapeHtml(String(phase))}</dd>
+            <dt>${escapeHtml(t('admin.phase'))}</dt>
+            <dd>${escapeHtml(phaseLabel(phase))}</dd>
           </div>
           <div class="admin-game-dl-row">
-            <dt>Question index</dt>
+            <dt>${escapeHtml(t('admin.questionIndex'))}</dt>
             <dd>${typeof idx === 'number' ? escapeHtml(String(idx)) : '—'}</dd>
           </div>
           <div class="admin-game-dl-row">
-            <dt>Question</dt>
+            <dt>${escapeHtml(t('admin.question'))}</dt>
             <dd>${questionText}</dd>
           </div>
           <div class="admin-game-dl-row">
-            <dt>Started</dt>
+            <dt>${escapeHtml(t('admin.started'))}</dt>
             <dd>${startedAt}</dd>
           </div>
           <div class="admin-game-dl-row">
-            <dt>Closes</dt>
+            <dt>${escapeHtml(t('admin.closes'))}</dt>
             <dd>${closesAt}</dd>
           </div>
         </dl>
         <p class="admin-game-progress">
           <strong>${answeredCount}</strong> / <strong>${participantsCount}</strong>
-          answered
+          ${escapeHtml(t('admin.answeredProgress'))}
         </p>
       </div>`
   }
@@ -323,28 +346,39 @@ export function renderAdmin(container) {
 
     let registration = ''
     if (!c) {
-      registration = `<p class="admin-confirmand-row"><strong>Registration</strong>: <span class="admin-confirmand-no">No confirmand registered yet</span></p>`
+      registration = `<p class="admin-confirmand-row"><strong>${escapeHtml(t('admin.registration'))}</strong>: <span class="admin-confirmand-no">${escapeHtml(t('admin.noConfirmand'))}</span></p>`
     } else {
       const name = escapeHtml(formatParticipantDisplay(c.participant))
-      registration = `<p class="admin-confirmand-row"><strong>Registration</strong>: <span class="admin-confirmand-yes">Registered</span> as <strong>${name}</strong></p>`
+      registration = `<p class="admin-confirmand-row"><strong>${escapeHtml(t('admin.registration'))}</strong>: <span class="admin-confirmand-yes">${escapeHtml(t('admin.registered'))}</span> ${escapeHtml(t('admin.registeredAs'))} <strong>${name}</strong></p>`
     }
 
     let currentQ = ''
     if (!onQuestion) {
-      currentQ = `<p class="admin-confirmand-row admin-confirmand-muted"><strong>Current question</strong>: — (start a question to track answers)</p>`
+      currentQ = `<p class="admin-confirmand-row admin-confirmand-muted"><strong>${escapeHtml(t('admin.currentQuestion'))}</strong>: ${t('admin.startQuestionToTrack')}</p>`
     } else if (confirmandAnswer) {
-      currentQ = `<p class="admin-confirmand-row"><strong>Current question</strong>: <span class="admin-confirmand-answered">Has answered</span></p>`
+      currentQ = `<p class="admin-confirmand-row"><strong>${escapeHtml(t('admin.currentQuestion'))}</strong>: <span class="admin-confirmand-answered">${escapeHtml(t('admin.hasAnswered'))}</span></p>`
     } else if (!c) {
-      currentQ = `<p class="admin-confirmand-row"><strong>Current question</strong>: <span class="admin-confirmand-muted">N/A (no confirmand)</span></p>`
+      currentQ = `<p class="admin-confirmand-row"><strong>${escapeHtml(t('admin.currentQuestion'))}</strong>: <span class="admin-confirmand-muted">${t('admin.currentQuestionNa')}</span></p>`
     } else {
-      currentQ = `<p class="admin-confirmand-row"><strong>Current question</strong>: <span class="admin-confirmand-waiting">Not answered yet</span></p>`
+      currentQ = `<p class="admin-confirmand-row"><strong>${escapeHtml(t('admin.currentQuestion'))}</strong>: <span class="admin-confirmand-waiting">${escapeHtml(t('admin.notAnsweredYet'))}</span></p>`
     }
+
+    const closedWithoutKey =
+      phase === 'question_closed' &&
+      onQuestion &&
+      c &&
+      !confirmandAnswer
+
+    const warning = closedWithoutKey
+      ? `<p class="admin-confirmand-warning" role="alert">${t('admin.closedNoConfirmandWarning')}</p>`
+      : ''
 
     return `
       <div class="admin-confirmand-inner">
-        <h2 class="admin-confirmand-heading">Confirmand</h2>
+        <h2 class="admin-confirmand-heading">${escapeHtml(t('admin.confirmandPanelTitle'))}</h2>
         ${registration}
         ${currentQ}
+        ${warning}
       </div>`
   }
 
@@ -357,7 +391,7 @@ export function renderAdmin(container) {
       bannerText =
         typeof err.message === 'string'
           ? err.message
-          : 'Could not start question.'
+          : t('admin.couldNotStart')
     }
     draw()
   })
@@ -371,7 +405,7 @@ export function renderAdmin(container) {
       bannerText =
         typeof err.message === 'string'
           ? err.message
-          : 'Could not close question.'
+          : t('admin.couldNotClose')
     }
     draw()
   })
@@ -385,7 +419,7 @@ export function renderAdmin(container) {
       bannerText =
         typeof err.message === 'string'
           ? err.message
-          : 'Could not advance to next question.'
+          : t('admin.couldNotNext')
     }
     draw()
   })
@@ -393,7 +427,7 @@ export function renderAdmin(container) {
   function participantRowsHtml() {
     const entries = sortParticipantsByDisplayName(participantsMap)
     if (entries.length === 0) {
-      return '<p class="admin-empty">No participants yet.</p>'
+      return '<p class="admin-empty">' + escapeHtml(t('admin.noParticipants')) + '</p>'
     }
 
     const items = entries.map(([userId, p]) => {
@@ -403,6 +437,7 @@ export function renderAdmin(container) {
 
       if (editingUserId === userId) {
         const valAttr = escapeAttr(rawParticipantDisplay(p))
+        const roleDisplay = escapeHtml(participantRoleDisplay(p))
         const role = participantRoleLabel(p)
         const roleClass =
           role === PARTICIPANT_ROLE_CONFIRMAND
@@ -410,15 +445,16 @@ export function renderAdmin(container) {
             : 'admin-role-guest'
         return `
           <li class="admin-row admin-row-edit" data-user-id="${idAttr}">
-            <input type="text" class="admin-name-input" maxlength="80" value="${valAttr}" aria-label="Display name" />
-            <span class="admin-role-pill ${roleClass}">${escapeHtml(role)}</span>
+            <input type="text" class="admin-name-input" maxlength="80" value="${valAttr}" aria-label="${escapeAttr(t('admin.displayNameAria'))}" />
+            <span class="admin-role-pill ${roleClass}">${roleDisplay}</span>
             <span class="admin-short-id">${shortId}</span>
-            <button type="button" class="admin-btn" data-action="save">Save</button>
-            <button type="button" class="admin-btn admin-btn-secondary" data-action="cancel">Cancel</button>
+            <button type="button" class="admin-btn" data-action="save">${escapeHtml(t('admin.save'))}</button>
+            <button type="button" class="admin-btn admin-btn-secondary" data-action="cancel">${escapeHtml(t('admin.cancel'))}</button>
           </li>`
       }
 
       const label = escapeHtml(formatParticipantDisplay(p))
+      const roleDisplay = escapeHtml(participantRoleDisplay(p))
       const role = participantRoleLabel(p)
       const roleClass =
         role === PARTICIPANT_ROLE_CONFIRMAND
@@ -427,9 +463,9 @@ export function renderAdmin(container) {
       return `
         <li class="admin-row" data-user-id="${idAttr}">
           <span class="admin-display-name">${label}</span>
-          <span class="admin-role-pill ${roleClass}">${escapeHtml(role)}</span>
+          <span class="admin-role-pill ${roleClass}">${roleDisplay}</span>
           <span class="admin-short-id">${shortId}</span>
-          <button type="button" class="admin-btn" data-action="edit">Edit</button>
+          <button type="button" class="admin-btn" data-action="edit">${escapeHtml(t('admin.edit'))}</button>
         </li>`
     })
 
@@ -444,7 +480,7 @@ export function renderAdmin(container) {
       if (gameStatusMount) gameStatusMount.innerHTML = ''
       if (confirmandMount) confirmandMount.innerHTML = ''
       listMount.innerHTML =
-        '<p class="admin-empty">Connect Firebase (<code>VITE_FIREBASE_DATABASE_URL</code>) to manage participants.</p>'
+        '<p class="admin-empty">' + escapeHtml(t('admin.connectFirebaseAdmin')) + '</p>'
       return
     }
     if (gameStatusMount) gameStatusMount.innerHTML = gameStatusHtml()
@@ -502,7 +538,7 @@ export function renderAdmin(container) {
       bannerText =
         typeof err.message === 'string'
           ? err.message
-          : 'Could not save display name.'
+          : t('admin.couldNotSaveName')
       draw()
     }
   })
@@ -514,9 +550,27 @@ export function renderAdmin(container) {
 
   gameUnsubscribe = subscribeGame((next) => {
     gameState = next
+    if (
+      next?.phase === 'question_open' &&
+      typeof next.closesAt === 'number' &&
+      Date.now() >= next.closesAt
+    ) {
+      maybeAutoCloseExpiredQuestion().catch(console.error)
+    }
     resubscribeAnswersForCurrentQuestion()
     draw()
   })
+
+  clearAdminTimerTick()
+  adminTimerTickId = window.setInterval(() => {
+    if (
+      gameState?.phase === 'question_open' &&
+      typeof gameState.closesAt === 'number' &&
+      Date.now() >= gameState.closesAt
+    ) {
+      maybeAutoCloseExpiredQuestion().catch(console.error)
+    }
+  }, 1000)
 
   participantUnsubscribe = subscribeParticipants((map) => {
     participantsMap = map ?? {}

@@ -1,7 +1,6 @@
-import { ref, onValue, get, update } from 'firebase/database'
+import { ref, onValue, update } from 'firebase/database'
 import { db } from './firebase.js'
-
-export const MISSING_DISPLAY_NAME = '(missing name)'
+import { t } from './i18n.js'
 
 /** Raw trimmed `displayName` from Firebase, or "" if absent. */
 export function rawParticipantDisplay(participantLike) {
@@ -13,7 +12,7 @@ export function rawParticipantDisplay(participantLike) {
 /** Primary label everywhere in the UI (participant object or `{ displayName }`). */
 export function formatParticipantDisplay(participantLike) {
   const raw = rawParticipantDisplay(participantLike)
-  return raw || MISSING_DISPLAY_NAME
+  return raw || t('common.missingName')
 }
 
 /** `[userId, data][]` alphabetically by visible display name, then `userId`. */
@@ -43,22 +42,14 @@ export function subscribeParticipants(onData) {
 
 export async function updateParticipantDisplayName(userId, displayName) {
   if (!db) {
-    throw new Error(
-      'Firebase Realtime Database URL missing. Add VITE_FIREBASE_DATABASE_URL to your .env file.',
-    )
+    throw new Error(t('errors.firebaseUrlMissing'))
   }
   const trimmed = displayName.trim()
   if (!trimmed) {
-    throw new Error('Display name cannot be empty.')
+    throw new Error(t('errors.displayNameEmpty'))
   }
 
   await update(ref(db, `participants/${userId}`), {
     displayName: trimmed,
   })
-
-  const scoreRef = ref(db, `scores/${userId}`)
-  const scoreSnap = await get(scoreRef)
-  if (scoreSnap.exists()) {
-    await update(scoreRef, { displayName: trimmed })
-  }
 }

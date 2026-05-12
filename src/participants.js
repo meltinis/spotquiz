@@ -1,12 +1,11 @@
 import { ref, set, update, get, onValue } from 'firebase/database'
 import { db } from './firebase.js'
+import { t } from './i18n.js'
 import { getRoleFromPathname, SPOTQUIZ_DEBUG_ROLE } from './routeRole.js'
 
 function requireDb() {
   if (!db) {
-    throw new Error(
-      'Firebase Realtime Database URL missing. Add VITE_FIREBASE_DATABASE_URL to your .env file.',
-    )
+    throw new Error(t('errors.firebaseUrlMissing'))
   }
 }
 
