@@ -1,4 +1,5 @@
 import './style.css'
+import { testRealtimeConnection } from './firebase.js'
 import { renderGuest } from './guest.js'
 import { renderAdmin } from './admin.js'
 import { renderScreen } from './screen.js'
@@ -36,5 +37,7 @@ export function navigate(to) {
   window.history.pushState({}, '', to)
   route()
 }
+
+testRealtimeConnection().catch(console.error)
 
 route()
