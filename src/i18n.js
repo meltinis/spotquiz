@@ -54,6 +54,19 @@ const MESSAGES = {
     statRank: 'Placering',
     statAvgTime: 'Snit svartid',
     answerAriaPrefix: 'Svar',
+    feedbackCorrect: [
+      'Sådan! Helt korrekt.',
+      'Godt klaret — du kender Sebastian!',
+      'Lige i øjet!',
+      'Skarp som en kniv!',
+    ],
+    feedbackWrong: [
+      'Så tæt på!',
+      'Av — ikke helt.',
+      'Pyt — du fanger den næste!',
+      'Næste gang, mester.',
+    ],
+    feedbackNoAnswer: 'Du nåede ikke at svare denne gang.',
   },
   admin: {
     title: 'Admin',

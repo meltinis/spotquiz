@@ -222,6 +222,43 @@ p {
   opacity: 0.8;
 }
 
+/* Per-round playful feedback (sits above the "My status" card) */
+.guest-round-feedback {
+  margin: 1.35rem 0 0;
+  padding: 0.75rem 1rem;
+  font-size: clamp(1rem, 3.5vw, 1.2rem);
+  font-weight: 800;
+  text-align: center;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  letter-spacing: -0.005em;
+}
+
+.guest-round-feedback--correct {
+  background: linear-gradient(160deg, #dcfce7 0%, #bbf7d0 100%);
+  color: #14532d;
+  border-color: rgba(20, 83, 45, 0.22);
+}
+
+.guest-round-feedback--wrong {
+  background: linear-gradient(160deg, #ffe4e6 0%, #fecdd3 100%);
+  color: #881337;
+  border-color: rgba(136, 19, 55, 0.22);
+}
+
+.guest-round-feedback--no-answer {
+  background: linear-gradient(160deg, #e2e8f0 0%, #cbd5e1 100%);
+  color: #1f2937;
+  border-color: rgba(31, 41, 55, 0.18);
+}
+
+/* The status card already adds its own top margin; when the feedback sits
+   directly above it, collapse the card's margin so the spacing reads as one
+   grouped block. */
+.guest-round-feedback + .guest-player-stats-card {
+  margin-top: 0.7rem;
+}
+
 /* Player stats card (guest "My status" on question closed) */
 .guest-player-stats-card {
   margin: 1.35rem 0 0;

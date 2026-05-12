@@ -306,6 +306,43 @@ function countCorrectFromResults(resultsMap, userId) {
 
 }
 
+const FEEDBACK_CORRECT_VARIANTS = 4
+const FEEDBACK_WRONG_VARIANTS = 4
+
+/**
+ * Per-question feedback for this user. Returns `null` until the current question
+ * is scored (results node exists with `scored === true`); otherwise picks a
+ * playful Danish line from `guest.feedbackCorrect` / `guest.feedbackWrong` /
+ * `guest.feedbackNoAnswer` based on `correct` flag — variant chosen by `qIdx`
+ * so it stays stable for one question but varies between questions.
+ */
+function feedbackForCurrentQuestion(userId, qIdx, resultsMap) {
+  if (typeof qIdx !== 'number') return null
+  const res = resultNodeForQuestion(resultsMap, qIdx)
+  if (!res || res.scored !== true) return null
+  const scoreRow = res.scores?.[userId]
+  if (!scoreRow) {
+    return { kind: 'no-answer', text: t('guest.feedbackNoAnswer') }
+  }
+  if (scoreRow.correct === true) {
+    const i = Math.abs(qIdx) % FEEDBACK_CORRECT_VARIANTS
+    return { kind: 'correct', text: t(`guest.feedbackCorrect.${i}`) }
+  }
+  const i = Math.abs(qIdx) % FEEDBACK_WRONG_VARIANTS
+  return { kind: 'wrong', text: t(`guest.feedbackWrong.${i}`) }
+}
+
+function roundFeedbackHtml(feedback) {
+  if (!feedback) return ''
+  const modifier =
+    feedback.kind === 'correct'
+      ? ' guest-round-feedback--correct'
+      : feedback.kind === 'wrong'
+        ? ' guest-round-feedback--wrong'
+        : ' guest-round-feedback--no-answer'
+  return `<p class="guest-round-feedback${modifier}" role="status">${escapeHtml(feedback.text)}</p>`
+}
+
 function collectGuestUserIdsForRanking(scoresRoot, participantsMap, answersMap) {
 
   const ids = new Set()
@@ -1413,7 +1450,13 @@ function mountParticipantWaiting(container, userId, cfg) {
 
       )
 
-      myStatusHtml = myStatusSectionHtml(stats, lastGuestMyStatusStats)
+      const feedback = feedbackForCurrentQuestion(userId, idx, resultsMap)
+
+      myStatusHtml =
+
+        roundFeedbackHtml(feedback) +
+
+        myStatusSectionHtml(stats, lastGuestMyStatusStats)
 
       lastGuestMyStatusStats = {
 
